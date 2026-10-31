@@ -2,6 +2,8 @@
 
 ## 0.3.0 Preview — 2026-10-31
 
+- 發布後補充單 EXE 便攜版：包含 .NET 8.0.33、自動準備並校驗本機快取；新增對應 portable-source 附件，不改寫已發布版本 tag。
+
 - 新增繁體中文／简体中文／English 的即時語言切換與保存，英文內嵌 Google Sans。
 - 首頁標題統一為 Controller Hub；語言切換不影響控制器識別與映射。
 

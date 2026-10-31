@@ -16,3 +16,5 @@ DualSense illustration: Al. Lopez / [Gamepad-Asset-Pack](https://github.com/AL20
 HidHide 1.5.230: https://github.com/nefarius/HidHide — MIT. Optional installer, unchanged; license: Backend/HidHide-LICENSE.txt. Installation is initiated only by the user; not required for offline checks.
 
 Google Sans: Google Sans Project Authors / [google/fonts](https://github.com/google/fonts/tree/main/ofl/googlesans), SIL Open Font License 1.1. The application embeds static Regular and Bold instances generated from the pinned variable font for WPF compatibility; glyph outlines were not edited. License: licenses/GoogleSans-OFL.txt. Source revision and file hashes: DEPENDENCIES.lock.json.
+
+Portable EXE: bundles Microsoft.NETCore.App and Microsoft.WindowsDesktop.App 8.0.33 (win-x64). Their runtime package LICENSE / THIRD-PARTY-NOTICES files are preserved under licenses/ in the extracted payload. The small launcher uses the .NET Framework already included with Windows 11; it does not install a runtime or driver.

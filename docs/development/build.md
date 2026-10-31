@@ -62,3 +62,7 @@ git -C ./upstream/DS4Windows diff --binary --output=../../patches/ds4windows-fus
 ```
 
 準備 GitHub 發布時，提交原始碼、文件、授權、lock 和 patch；不要提交 `upstream/`、`dist/`、個人診斷或發布 ZIP。ZIP／SHA-256 放到 Releases，並同步提供該版對應原始碼與依賴／補丁，保留所有適用的第三方授權。本文件不代表已上傳或建立 GitHub Release。
+
+## 便攜單 EXE
+
+在 PowerShell 7 執行 `./scripts/build-portable.ps1`，產出含 runtime 的便攜版及校驗碼。啟動器原始碼與離線測試位於 `src/ControllerHub.Portable/`；不需要另外安裝 .NET Framework 開發套件，腳本使用 Windows 內建編譯器。詳見[便攜版說明](../portable.md)。

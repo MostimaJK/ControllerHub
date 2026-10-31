@@ -3,7 +3,7 @@
 ## 系統需求
 
 - Windows 11 x64：目前的主要開發與實測環境。其他 Windows 版本未完成驗收。
-- [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)：執行程式所需，請選 **Desktop Runtime**，不是只有 ASP.NET Core Runtime。
+- ZIP 版需要 [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)；單 EXE 已包含此執行階段。ZIP 版請選 **Desktop Runtime**，不是只有 ASP.NET Core Runtime。
 - Switch 2 Pro 或 PS5 DualSense、可傳輸資料的 USB 線，或可正常工作的藍牙適配器。
 - 虛擬輸出需要 usbip-win2 Client 驅動。初次安裝驅動需要系統管理員權限；應用程式本身不是驅動安裝器。
 
@@ -11,7 +11,12 @@
 
 ## 取得與解壓
 
-從 [ControllerHub Releases](https://github.com/MostimaJK/ControllerHub/releases/tag/v0.3.0-preview) 下載 `ControllerHub-v0.3.0-preview-win-x64.zip`。GitHub 的「Download ZIP」下載的是原始碼，不是可直接執行的程式包。
+從 [ControllerHub Releases](https://github.com/MostimaJK/ControllerHub/releases/tag/v0.3.0-preview) 選擇：
+
+- `ControllerHub-v0.3.0-preview-portable-win-x64.exe`：單檔直接執行，已包含 .NET 8；首次會自動建立本機快取。
+- `ControllerHub-v0.3.0-preview-win-x64.zip`：完整解壓，需另外安裝 .NET 8 Desktop Runtime x64。
+
+單 EXE 的具體行為見[便攜版說明](portable.md)。以下解壓步驟適用 ZIP 版。GitHub 的「Download ZIP」下載的是原始碼，不是可直接執行的程式包。
 
 1. 將發布 ZIP 完整解壓到固定資料夾。
 2. 保留 `ControllerHub.exe`、同目錄 DLL、`Backend` 和其他隨附資料；不能只複製一個 EXE。

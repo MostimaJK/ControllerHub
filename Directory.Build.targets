@@ -1,0 +1,16 @@
+<Project>
+  <!-- Only runtime frameworks are pinned; Windows SDK reference packs retain
+       their own version. Conditions are required for item updates inside targets. -->
+  <Target Name="ControllerHubPinPortableRuntime" BeforeTargets="ProcessFrameworkReferences"
+          Condition="'$(ControllerHubPortableRuntimeVersion)' != ''">
+    <ItemGroup>
+      <KnownFrameworkReference Condition="'%(KnownFrameworkReference.RuntimeFrameworkName)' == 'Microsoft.WindowsDesktop.App'">
+        <DefaultRuntimeFrameworkVersion>$(ControllerHubPortableRuntimeVersion)</DefaultRuntimeFrameworkVersion>
+        <LatestRuntimeFrameworkVersion>$(ControllerHubPortableRuntimeVersion)</LatestRuntimeFrameworkVersion>
+      </KnownFrameworkReference>
+      <FrameworkReference Condition="'%(FrameworkReference.Identity)' == 'Microsoft.NETCore.App' Or '%(FrameworkReference.Identity)' == 'Microsoft.WindowsDesktop.App.WPF' Or '%(FrameworkReference.Identity)' == 'Microsoft.WindowsDesktop.App.WindowsForms'">
+        <RuntimeFrameworkVersion>$(ControllerHubPortableRuntimeVersion)</RuntimeFrameworkVersion>
+      </FrameworkReference>
+    </ItemGroup>
+  </Target>
+</Project>

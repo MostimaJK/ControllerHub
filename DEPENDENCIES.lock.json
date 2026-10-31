@@ -55,5 +55,16 @@
       "GoogleSans-Bold.ttf": "09285c237b6ab51bb49945956384b859577bb4f40e6b28f070b3afdd013c11d2",
       "GoogleSans-Regular.ttf": "1bf3c78e9e3a14b30cb69aec7f7f3a3442920b586a00ba87cfcbce0926b4e32c"
     }
+  },
+  "portableRuntime": {
+    "version": "8.0.33",
+    "architecture": "win-x64",
+    "frameworks": [
+      "Microsoft.NETCore.App",
+      "Microsoft.WindowsDesktop.App"
+    ],
+    "metadata": "https://builds.dotnet.microsoft.com/dotnet/release-metadata/8.0/releases.json",
+    "launcher": "Windows built-in .NET Framework 4.x; C# 5 compatible",
+    "deployment": "Self-contained application payload, extracted to per-user content-addressed cache."
   }
 }

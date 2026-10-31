@@ -26,12 +26,14 @@ Xbox 是一般 Windows 遊戲的建議起點。程式不要求遊戲從 Steam �
 
 ## 快速開始
 
-1. 解壓完整的 Windows x64 預覽包，保留 EXE、DLL、`Backend` 等資料夾。
-2. 安裝 **.NET 8 Desktop Runtime x64**。需要虛擬遊戲輸出時，再安裝隨附的 **usbip-win2 Client** 驅動。
+1. 下載單 EXE 便攜版直接執行；或解壓完整 ZIP，保留 EXE、DLL、`Backend` 等資料夾。
+2. **單 EXE 已包含 .NET 8**；ZIP 版需安裝 **.NET 8 Desktop Runtime x64**。需要虛擬輸出時，兩種版本都需要 **usbip-win2 Client** 驅動。
 3. 執行 `ControllerHub.exe`，選擇手柄型號、USB／藍牙，以及輸出模式；初次使用建議選 **Xbox**。
 4. 按「連接手柄」，確認顯示 **已連接・遊戲輸出就緒**，再啟動遊戲。
 
-從 [GitHub Releases 下載 Windows 預覽包](https://github.com/MostimaJK/ControllerHub/releases/tag/v0.3.0-preview)。請下載 `ControllerHub-v0.3.0-preview-win-x64.zip` 並完整解壓；原始碼倉庫及 GitHub 的 Source code ZIP 不包含可直接執行的成品。
+從 [GitHub Releases 下載 Windows 預覽包](https://github.com/MostimaJK/ControllerHub/releases/tag/v0.3.0-preview)。可選擇 **`ControllerHub-v0.3.0-preview-portable-win-x64.exe`**（單檔、包含 .NET）或 `ControllerHub-v0.3.0-preview-win-x64.zip`（完整解壓、另裝 .NET）。原始碼倉庫及 GitHub 的 Source code ZIP 不包含可直接執行的成品。
+
+單 EXE 首次啟動會自動準備本機快取，之後重用已校驗的檔案。它不會自動安裝驅動。詳見[便攜版說明](docs/portable.md)。
 
 [安裝指南](docs/install.md) · [使用指南](docs/usage.md) · [功能與相容性](docs/features.md) · [故障排查](docs/troubleshooting.md)
 

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ControllerHub</AssemblyName>
+    <RootNamespace>ControllerFusion</RootNamespace>
+    <Product>ControllerHub</Product>
+    <Description>Switch 2 Pro and DualSense controller workspace for Windows</Description>
+    <Version>0.3.0</Version>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\upstream\DS4Windows\extras\HidHide_1.5.230_x64.exe" Link="Backend\HidHide_1.5.230_x64.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\upstream\DS4Windows\extras\HidHide-1.5.230-LICENSE.txt" Link="Backend\HidHide-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Resource Include="Assets\DualSense.png" />
+    <Resource Include="Assets\Fonts\*.ttf" />
+    <EmbeddedResource Include="Localization\*.json" LogicalName="ControllerHub.Localization.%(Filename)%(Extension)" />
+    <None Update="Assets\Gamepad-Asset-Pack-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\upstream\PRO2\source\final-three-in-one\tools\viiper\haptic-v0.8.0\viiper-haptic-v2.exe" Link="Backend\viiper-haptic-v2.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\upstream\PRO2\source\final-three-in-one\tools\usbip-win2\v0.9.7.7\USBip-0.9.7.7-x64.exe" Link="Backend\USBip-0.9.7.7-x64.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <ProjectReference Include="..\..\upstream\DS4Windows\DS4Windows\DS4WinWPF.csproj" />
+    <Compile Include="..\..\upstream\PRO2\source\final-three-in-one\windows\v60_viiper_app\ViiperProtocolClient.cs" Link="Engine\ViiperProtocolClient.cs" />
+    <None Update="Assets\NS2ProCon-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Assets\ARTWORK-NOTICE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="ExcludeOriginalAppInstallers" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('extras\')) Or '%(ResolvedFileToPublish.RelativePath)' == 'DS4Windows.exe' Or '%(ResolvedFileToPublish.RelativePath)' == 'DS4Windows.deps.json' Or '%(ResolvedFileToPublish.RelativePath)' == 'DS4Windows.runtimeconfig.json'" />
+    </ItemGroup>
+  </Target>
+</Project>

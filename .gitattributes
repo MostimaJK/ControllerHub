@@ -1,0 +1,13 @@
+* text=auto
+*.md text eol=lf
+*.cs text eol=lf
+*.ps1 text eol=crlf
+*.json text eol=lf
+*.patch -text
+*.png binary
+*.ico binary
+
+# Preserve upstream patch context and third-party notice formatting.
+*.patch -whitespace
+licenses/** -whitespace
+src/ControllerFusion.App/Assets/*LICENSE.txt -whitespace

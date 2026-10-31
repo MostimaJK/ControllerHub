@@ -1,0 +1,28 @@
+# Restorable dependencies: scripts/bootstrap.ps1
+/upstream/
+**/bin/
+**/obj/
+/dist/
+/releases/
+/artifacts/
+*.user
+*.suo
+*.log
+*.trx
+.vs/
+.idea/
+preferences.json
+*.dmp
+*.pfx
+*.p12
+.env
+.env.*
+!.env.example
+
+# Generated binaries and editor / OS cache
+*.exe
+*.dll
+*.pdb
+TestResults/
+.DS_Store
+Thumbs.db

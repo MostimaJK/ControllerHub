@@ -1,0 +1,134 @@
+[
+  {
+    "package": "AvalonEdit/6.3.0.90",
+    "metadata": "https://www.nuget.org/packages/AvalonEdit/6.3.0.90"
+  },
+  {
+    "package": "bloomtom.HttpProgress/2.3.2",
+    "metadata": "https://www.nuget.org/packages/bloomtom.HttpProgress/2.3.2"
+  },
+  {
+    "package": "BouncyCastle.Cryptography/2.7.0",
+    "metadata": "https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0"
+  },
+  {
+    "package": "Concentus/2.2.2",
+    "metadata": "https://www.nuget.org/packages/Concentus/2.2.2"
+  },
+  {
+    "package": "DotNetProjects.Extended.Wpf.Toolkit/5.0.106",
+    "metadata": "https://www.nuget.org/packages/DotNetProjects.Extended.Wpf.Toolkit/5.0.106"
+  },
+  {
+    "package": "H.NotifyIcon/2.0.74",
+    "metadata": "https://www.nuget.org/packages/H.NotifyIcon/2.0.74"
+  },
+  {
+    "package": "H.NotifyIcon.Wpf/2.0.74",
+    "metadata": "https://www.nuget.org/packages/H.NotifyIcon.Wpf/2.0.74"
+  },
+  {
+    "package": "MdXaml/1.27.0",
+    "metadata": "https://www.nuget.org/packages/MdXaml/1.27.0"
+  },
+  {
+    "package": "MdXaml.Plugins/1.27.0",
+    "metadata": "https://www.nuget.org/packages/MdXaml.Plugins/1.27.0"
+  },
+  {
+    "package": "Microsoft.NETCore.Platforms/5.0.0",
+    "metadata": "https://www.nuget.org/packages/Microsoft.NETCore.Platforms/5.0.0"
+  },
+  {
+    "package": "Microsoft.Win32.Registry/5.0.0",
+    "metadata": "https://www.nuget.org/packages/Microsoft.Win32.Registry/5.0.0"
+  },
+  {
+    "package": "Microsoft.Win32.SystemEvents/6.0.0",
+    "metadata": "https://www.nuget.org/packages/Microsoft.Win32.SystemEvents/6.0.0"
+  },
+  {
+    "package": "NAudio/2.2.1",
+    "metadata": "https://www.nuget.org/packages/NAudio/2.2.1"
+  },
+  {
+    "package": "NAudio.Asio/2.2.1",
+    "metadata": "https://www.nuget.org/packages/NAudio.Asio/2.2.1"
+  },
+  {
+    "package": "NAudio.Core/2.2.1",
+    "metadata": "https://www.nuget.org/packages/NAudio.Core/2.2.1"
+  },
+  {
+    "package": "NAudio.Midi/2.2.1",
+    "metadata": "https://www.nuget.org/packages/NAudio.Midi/2.2.1"
+  },
+  {
+    "package": "NAudio.Wasapi/2.2.1",
+    "metadata": "https://www.nuget.org/packages/NAudio.Wasapi/2.2.1"
+  },
+  {
+    "package": "NAudio.WinForms/2.2.1",
+    "metadata": "https://www.nuget.org/packages/NAudio.WinForms/2.2.1"
+  },
+  {
+    "package": "NAudio.WinMM/2.2.1",
+    "metadata": "https://www.nuget.org/packages/NAudio.WinMM/2.2.1"
+  },
+  {
+    "package": "NLog/5.1.1",
+    "metadata": "https://www.nuget.org/packages/NLog/5.1.1"
+  },
+  {
+    "package": "Ookii.Dialogs.Wpf/5.0.1",
+    "metadata": "https://www.nuget.org/packages/Ookii.Dialogs.Wpf/5.0.1"
+  },
+  {
+    "package": "System.CodeDom/7.0.0",
+    "metadata": "https://www.nuget.org/packages/System.CodeDom/7.0.0"
+  },
+  {
+    "package": "System.Diagnostics.EventLog/5.0.0",
+    "metadata": "https://www.nuget.org/packages/System.Diagnostics.EventLog/5.0.0"
+  },
+  {
+    "package": "System.Drawing.Common/6.0.0",
+    "metadata": "https://www.nuget.org/packages/System.Drawing.Common/6.0.0"
+  },
+  {
+    "package": "System.Management/7.0.2",
+    "metadata": "https://www.nuget.org/packages/System.Management/7.0.2"
+  },
+  {
+    "package": "System.Memory/4.5.5",
+    "metadata": "https://www.nuget.org/packages/System.Memory/4.5.5"
+  },
+  {
+    "package": "System.Numerics.Vectors/4.5.0",
+    "metadata": "https://www.nuget.org/packages/System.Numerics.Vectors/4.5.0"
+  },
+  {
+    "package": "System.Security.AccessControl/5.0.0",
+    "metadata": "https://www.nuget.org/packages/System.Security.AccessControl/5.0.0"
+  },
+  {
+    "package": "System.Security.Principal.Windows/5.0.0",
+    "metadata": "https://www.nuget.org/packages/System.Security.Principal.Windows/5.0.0"
+  },
+  {
+    "package": "TaskScheduler/2.10.1",
+    "metadata": "https://www.nuget.org/packages/TaskScheduler/2.10.1"
+  },
+  {
+    "package": "WPFLocalizeExtension/3.9.4",
+    "metadata": "https://www.nuget.org/packages/WPFLocalizeExtension/3.9.4"
+  },
+  {
+    "package": "WpfScreenHelper/2.1.0",
+    "metadata": "https://www.nuget.org/packages/WpfScreenHelper/2.1.0"
+  },
+  {
+    "package": "XAMLMarkupExtensions/2.1.3",
+    "metadata": "https://www.nuget.org/packages/XAMLMarkupExtensions/2.1.3"
+  }
+]

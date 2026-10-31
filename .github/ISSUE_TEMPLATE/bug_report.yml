@@ -1,0 +1,23 @@
+name: Bug report / 問題回報
+description: Report a ControllerHub connection, input or feedback issue.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 環境
+      description: Windows 組建、ControllerHub 版本、手柄型號／韌體、USB 或藍牙、輸出模式。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 重現步驟、預期與實際結果
+      description: 如涉及遊戲，補充名稱／版本、啟動平台及其他映射工具狀態。
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 診斷或截圖（選填）
+      description: 請先在程式中預覽並檢查個人資料，不要直接上傳完整設定資料夾或原始日誌。

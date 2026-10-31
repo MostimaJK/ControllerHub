@@ -1,0 +1,59 @@
+{
+  "ds4windows": {
+    "repository": "https://github.com/hbashton/DS4Windows",
+    "commit": "2637673e0ecd03b042c30476224da398475d9cc7",
+    "license": "GPL-3.0-or-later",
+    "localChanges": "patches/ds4windows-fusion.patch"
+  },
+  "pro2": {
+    "repository": "https://github.com/LeonChrome/XinHeLianSheng-Pro2-Bridge",
+    "commit": "3ee3ebad468b7aa88488bd99c0c1c7d1acf456cd",
+    "license": "Apache-2.0",
+    "linkedSource": "source/final-three-in-one/windows/v60_viiper_app/ViiperProtocolClient.cs"
+  },
+  "viiper": {
+    "file": "Backend/viiper-haptic-v2.exe",
+    "sha256": "1ff901e659e99d62063ebc9cf99a78a7f3e1611154f04eef12a25641c0823d94",
+    "license": "GPL-3.0",
+    "source": "upstream/PRO2/source/final-three-in-one/tools/viiper/haptic-src"
+  },
+  "usbip": {
+    "version": "0.9.7.7",
+    "repository": "https://github.com/vadimgrn/usbip-win2/tree/v.0.9.7.7",
+    "file": "Backend/USBip-0.9.7.7-x64.exe",
+    "sha256": "51620fa5f9f8be5932bc9d786deee557ce06d5407a99cab490dcfac71f185fea",
+    "license": "BSD-2-Clause",
+    "installComponents": [
+      "main",
+      "client"
+    ]
+  },
+  "dualsenseArtwork": {
+    "repository": "https://github.com/AL2009man/Gamepad-Asset-Pack",
+    "commit": "a6d1113b0b3b2438bbbcb08a33f9a25eb2391d7c",
+    "license": "MIT",
+    "file": "src/ControllerFusion.App/Assets/DualSense.png",
+    "sha256": "1047c1d20888df9b85f8e5377558318b646d95671c1c09aa0dfe5574159013be"
+  },
+  "hidhide": {
+    "version": "1.5.230",
+    "repository": "https://github.com/nefarius/HidHide",
+    "file": "Backend/HidHide_1.5.230_x64.exe",
+    "sha256": "f4bbbcb82e6258641b887c74bc81c4c5f66e4aa811808dfc304347687b7605f6",
+    "optional": true,
+    "licenseFile": "Backend/HidHide-LICENSE.txt"
+  },
+  "googleSans": {
+    "repository": "https://github.com/google/fonts",
+    "commit": "d4eb04601981780781306966afb88e876652bab4",
+    "sourceFile": "ofl/googlesans/GoogleSans[GRAD,opsz,wght].ttf",
+    "sourceSha256": "d0a87d835a944b8b40d0e82a5651bb59ab97b936a2aeed5946eb57e7b2a3a90a",
+    "license": "OFL-1.1",
+    "licenseFile": "licenses/GoogleSans-OFL.txt",
+    "adaptation": "Static instances at opsz=18, GRAD=0, wght=400/700 generated with fontTools; no glyph edits.",
+    "files": {
+      "GoogleSans-Bold.ttf": "09285c237b6ab51bb49945956384b859577bb4f40e6b28f070b3afdd013c11d2",
+      "GoogleSans-Regular.ttf": "1bf3c78e9e3a14b30cb69aec7f7f3a3442920b586a00ba87cfcbce0926b4e32c"
+    }
+  }
+}

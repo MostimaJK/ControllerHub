@@ -1,0 +1,29 @@
+This project includes the source code of some third party projects. This file
+will attempt to document some third party source code that is used in the
+DS4Windows source code and state the original source.
+
+Crc32:
+https://github.com/dariogriffo/Crc32
+
+Font Awesome:
+https://fontawesome.com/license
+
+1€ Filter (C# version):
+http://cristal.univ-lille.fr/~casiez/1euro/OneEuroFilter.cs
+
+vJoyInterfaceCS:
+https://github.com/shauleiz/vJoy/tree/master/apps/common/vJoyInterfaceCS
+
+RNNoise:
+https://github.com/xiph/rnnoise
+
+RNNoise.NET wrapper and Windows native package:
+https://github.com/Yellow-Dog-Man/RNNoise.Net
+Switch 2 Pro Controller remapping artwork is an adapted project asset based on
+"Nintendo Switch 2 Pro Controller.jpg" by Kyu3a, licensed under CC BY-SA 4.0:
+https://commons.wikimedia.org/wiki/File:Nintendo_Switch_2_Pro_Controller.jpg
+https://creativecommons.org/licenses/by-sa/4.0/
+
+DualSense adaptive-trigger effect packing by John "Nielk1" Klein (MIT):
+https://gist.github.com/Nielk1/6d54cc2c00d2201ccb8c2720ad7538db
+The full notice also ships in Resources/DsxTriggerEffects.NOTICE.txt.

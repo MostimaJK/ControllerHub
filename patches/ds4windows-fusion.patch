@@ -1,0 +1,1215 @@
+diff --git a/DS4Windows/DS4Control/AudioHapticsService.cs b/DS4Windows/DS4Control/AudioHapticsService.cs
+index 1d5ded3..14be020 100644
+--- a/DS4Windows/DS4Control/AudioHapticsService.cs
++++ b/DS4Windows/DS4Control/AudioHapticsService.cs
+@@ -1,4 +1,4 @@
+-/*
++﻿/*
+ DS4Windows
+ Copyright (C) 2026  DS4Windows contributors
+ 
+@@ -150,6 +150,12 @@ namespace DS4Windows
+             return runtime?.ApplyToGameHaptics(report, sampleOffset) == true;
+         }
+ 
++        public string GetFusionDiagnostics(int slot)
++        {
++            var runtime=slot>=0 && slot<slots.Length?Volatile.Read(ref slots[slot]):null;
++            return runtime?.FusionDiagnostics ?? "音訊轉震動未啟用";
++        }
++
+         public AudioHapticsRuntimeStatus GetStatus(int slot)
+         {
+             if (slot < 0 || slot >= slots.Length)
+@@ -254,6 +260,7 @@ namespace DS4Windows
+             private long gameCarrierMisses;
+             private long standaloneWrites;
+             private long standaloneWriteFailures;
++            private int fusionConsecutiveFailures;
+             private long standaloneCarrierDeferrals;
+             private bool standaloneHapticsActive;
+             private bool standaloneMayOwnBluetoothHaptics;
+@@ -288,6 +295,7 @@ namespace DS4Windows
+                 this.controllerAudioUsbipPort = controllerAudioUsbipPort;
+             }
+ 
++            public string FusionDiagnostics => $"{status.Message} · 來源：{sourceDisplayName} · 擷取 {Interlocked.Read(ref capturedPackets)} · 有聲 {Interlocked.Read(ref capturedNonSilentPackets)} · 峰值 {Volatile.Read(ref maximumCapturedMagnitude)} · 送出 {Interlocked.Read(ref standaloneWrites)} · 失敗 {Interlocked.Read(ref standaloneWriteFailures)} · 原生：{nintendo?.FusionAudioFailure}";
+             public string SourceDisplayName => sourceDisplayName;
+             public AudioHapticsRuntimeStatus Status => status;
+             internal DS4Device Device => device;
+@@ -343,7 +351,7 @@ namespace DS4Windows
+                 {
+                     IsBackground = true,
+                     Name = $"DS4W Audio Haptics {slot + 1}",
+-                    Priority = ThreadPriority.Highest,
++                    Priority = ControllerFusion.Input.FusionInput.InputOnly ? ThreadPriority.Normal : ThreadPriority.Highest,
+                 };
+                 writerThread.Start();
+                 UpdateRuntimeStatus();
+@@ -434,8 +442,7 @@ namespace DS4Windows
+                 }
+                 else
+                 {
+-                    endpoint = enumerator.GetDefaultAudioEndpoint(DataFlow.Render,
+-                        Role.Multimedia);
++                    endpoint = string.IsNullOrEmpty(activeSettings.SourceEndpointId)?enumerator.GetDefaultAudioEndpoint(DataFlow.Render,Role.Multimedia):enumerator.GetDevice(activeSettings.SourceEndpointId);
+                 }
+ 
+                 captureEndpoint = endpoint;
+@@ -716,7 +723,7 @@ namespace DS4Windows
+                 AudioHapticsProfileSettings previousSettings =
+                     Volatile.Read(ref settings);
+ 
+-                bool sourceChanged = previousSettings.Source !=
++                bool sourceChanged = previousSettings.SourceEndpointId != nextSettings.SourceEndpointId || previousSettings.Source !=
+                     nextSettings.Source ||
+                     previousSettings.AutomaticGameDetection !=
+                         nextSettings.AutomaticGameDetection;
+@@ -1180,7 +1187,7 @@ namespace DS4Windows
+             private void WriterLoopCore()
+             {
+                 using MultimediaThreadRegistration mmcss =
+-                    MultimediaThreadRegistration.EnterProAudio();
++                    ControllerFusion.Input.FusionInput.InputOnly ? default : MultimediaThreadRegistration.EnterProAudio();
+                 Stopwatch clock = Stopwatch.StartNew();
+                 long nextPacketTicks = clock.ElapsedTicks;
+                 long packetIntervalTicks = Stopwatch.Frequency *
+@@ -1197,7 +1204,12 @@ namespace DS4Windows
+                     EnsureCapture();
+                     EnsureBluetoothTransport();
+                     EnsureNintendoOutput();
+-                    WaitUntil(clock, nextPacketTicks);
++                    if(ControllerFusion.Input.FusionInput.InputOnly)
++                    {
++                        long remaining=nextPacketTicks-clock.ElapsedTicks;
++                        if(remaining>0)stopped.Wait(Math.Max(1,(int)Math.Ceiling(remaining*1000.0/Stopwatch.Frequency)));
++                    }
++                    else WaitUntil(clock, nextPacketTicks);
+                     if (Volatile.Read(ref disposed) != 0) break;
+                     nextPacketTicks += packetIntervalTicks;
+                     packetPhaseRemainder += packetIntervalRemainder;
+@@ -1375,10 +1387,15 @@ namespace DS4Windows
+                         : nintendoOutput.TryWithdraw();
+                     if (accepted)
+                     {
++                        fusionConsecutiveFailures=0;
+                         standaloneHapticsActive = frameMagnitude > 0;
+                         Interlocked.Increment(ref standaloneWrites);
+                     }
+-                    else Interlocked.Increment(ref standaloneWriteFailures);
++                    else {
++                        Interlocked.Increment(ref standaloneWriteFailures);
++                        if(ControllerFusion.Input.FusionInput.InputOnly && ++fusionConsecutiveFailures>=8)
++                            throw new InvalidOperationException("原生 HD 音訊連續 8 次拒絕寫入，已自動停止音訊轉震動；輸入服務保持獨立。");
++                    }
+                     return accepted;
+                 }
+             }
+diff --git a/DS4Windows/DS4Control/ControlService.cs b/DS4Windows/DS4Control/ControlService.cs
+index 32f56da..f8a3570 100644
+--- a/DS4Windows/DS4Control/ControlService.cs
++++ b/DS4Windows/DS4Control/ControlService.cs
+@@ -1,4 +1,4 @@
+-/*
++﻿/*
+ DS4Windows
+ Copyright (C) 2023  Travis Nickles
+ 
+@@ -1341,6 +1341,24 @@ namespace DS4Windows
+         /// Adds the device to HidHide while the DS4Windows service is running.
+         /// Stop releases managed entries and Start acquires them again.
+         /// </summary>
++        internal string FusionConfigureHiding(int slot,bool enabled)
++        {
++            if(!ControllerFusion.Input.FusionInput.InputOnly) return "整合模式尚未啟用。";
++            if(!enabled) {ReleaseHidHideManagedDevices();ControllerFusion.Input.FusionHidingJournal.Complete();return "已釋放本程式管理的隱藏設定。";}
++            Global.RefreshHidHideInfo();
++            if(!Global.hidHideInstalled) return "未安裝 HidHide，未更改任何隱藏設定。";
++            var device=DS4Controllers.ElementAtOrDefault(slot);
++            if(device?.HidDevice==null) return "此傳輸由專用協定管理，沒有可隱藏的標準 HID 手柄。";
++            if(ControllerFusion.Input.FusionInput.IsUsbipDevice(device.HidDevice.DevicePath)) return "拒絕隱藏虛擬輸出。";
++            using(var api=new HidHideAPIDevice(false))
++            {
++                if(!api.TryGetActiveState(out bool active) || !active) return "請先在 HidHide 設定啟用裝置隱藏，再套用；本程式不會切換全域隱藏開關。";
++            }
++            CheckHidHidePresence();
++            ControllerFusion.Input.FusionHidingJournal.Record(device);
++            return EnsureHidHideSessionForDevice(device)?"實體手柄已隱藏；輸入服務停止時釋放本次設定。":"HidHide 拒絕隱藏，請檢查權限與應用程式允許清單。";
++        }
++
+         private bool EnsureHidHideSessionForDevice(DS4Device dev)
+         {
+             if (PortableLabContext.IsActive) return false;
+@@ -2953,7 +2971,8 @@ namespace DS4Windows
+                     // USB/IP output imported. Remove those ports before HID
+                     // discovery or DS4Windows will ingest its own VIIPER DS4,
+                     // create a second output/UAC endpoint, and recurse.
+-                    ViiperUsbipPortManager.RecoverStaleLocalViiperPortsAtStartup();
++                    if (!ControllerFusion.Input.FusionInput.InputOnly)
++                        ViiperUsbipPortManager.RecoverStaleLocalViiperPortsAtStartup();
+                     // Let usbccgp/HID finish publishing removal before the
+                     // first input snapshot; otherwise a detached interface can
+                     // remain enumerable for one final discovery pass.
+@@ -3013,13 +3032,14 @@ namespace DS4Windows
+                     LogDebug($"Sunshine controller bridge could not start: {bridgeException.Message}", true);
+                 }
+                 StartGameBarStateTimer();
+-                if (!switch2ProUsbProductionCoordinator.TryStart(
+-                        inputServiceGeneration))
++                if (ControllerFusion.Input.FusionInput.EnableSwitch2Usb &&
++                    !switch2ProUsbProductionCoordinator.TryStart(inputServiceGeneration))
+                 {
+                     LogDebug(
+                         "Switch 2 Pro USB discovery could not start.", true);
+                 }
+-                BeginSwitch2BluetoothDiscovery(inputServiceGeneration);
++                if (ControllerFusion.Input.FusionInput.EnableSwitch2Bluetooth)
++                    BeginSwitch2BluetoothDiscovery(inputServiceGeneration);
+ 
+                 if (_udpServer != null)
+                 {
+@@ -4716,6 +4736,7 @@ namespace DS4Windows
+ 
+         public void TouchPadOn(int ind, DS4Device device)
+         {
++            if (ControllerFusion.Input.FusionInput.InputOnly) return;
+             if (ControlServiceMouseCallbackSubscription.IsInsideCallback)
+                 throw new InvalidOperationException("Mouse callback replacement requires a cold lifecycle boundary.");
+             lock (serviceLifecycleLock)
+@@ -6088,6 +6109,9 @@ namespace DS4Windows
+             ReportDiagnosticsWorker.Source diagnosticsSource,
+             DS4State projectedState = null, DS4State projectedPreviousState = null)
+         {
++            // Fusion owns mappings and output. Never execute DS4Windows mouse,
++            // keyboard or virtual-output mappings in this embedded input host.
++            if (ControllerFusion.Input.FusionInput.Publish(device, ind, projectedState)) return;
+             if ((uint)ind < (uint)DS4Controllers.Length)
+             {
+                 OutContType normalizedOutput = activeOutDevType[ind].Normalize();
+diff --git a/DS4Windows/DS4Control/ProfileFeatureSettings.cs b/DS4Windows/DS4Control/ProfileFeatureSettings.cs
+index 29f6965..859bdc0 100644
+--- a/DS4Windows/DS4Control/ProfileFeatureSettings.cs
++++ b/DS4Windows/DS4Control/ProfileFeatureSettings.cs
+@@ -1,4 +1,4 @@
+-/*
++﻿/*
+ DS4Windows
+ Copyright (C) 2026  DS4Windows contributors
+ 
+@@ -73,6 +73,7 @@ namespace DS4Windows
+         public bool StreamAppAudioToHeadsetOnly { get; set; }
+         public bool AutomaticGameDetection { get; set; }
+         public AudioHapticsSourceKind Source { get; set; } = AudioHapticsSourceKind.SystemAudio;
++        public string SourceEndpointId { get; set; } = string.Empty;
+         public AudioHapticsMode Mode { get; set; } = AudioHapticsMode.Mix;
+         public int GainPercent { get; set; } = DefaultGainPercent;
+         public AudioHapticsBassFocus BassFocus { get; set; } = AudioHapticsBassFocus.Balanced;
+@@ -127,6 +128,7 @@ namespace DS4Windows
+             StreamAppAudioToHeadsetOnly = StreamAppAudioToHeadsetOnly,
+             AutomaticGameDetection = AutomaticGameDetection,
+             Source = Source,
++            SourceEndpointId = SourceEndpointId,
+             Mode = Mode,
+             GainPercent = GainPercent,
+             BassFocus = BassFocus,
+@@ -145,6 +147,7 @@ namespace DS4Windows
+             !Enabled && !StreamAppAudioToController &&
+             !StreamAppAudioToHeadsetOnly &&
+             !AutomaticGameDetection &&
++            string.IsNullOrEmpty(SourceEndpointId) &&
+             Source == AudioHapticsSourceKind.SystemAudio &&
+             Mode == AudioHapticsMode.Mix && GainPercent == DefaultGainPercent &&
+             BassFocus == AudioHapticsBassFocus.Balanced &&
+diff --git a/DS4Windows/DS4Control/ScpUtil.cs b/DS4Windows/DS4Control/ScpUtil.cs
+index edc9145..7c7003f 100644
+--- a/DS4Windows/DS4Control/ScpUtil.cs
++++ b/DS4Windows/DS4Control/ScpUtil.cs
+@@ -2467,7 +2467,7 @@ namespace DS4Windows
+         public static bool[] DinputOnly => m_Config.dinputOnly;
+         public static bool getDInputOnly(int index)
+         {
+-            return m_Config.dinputOnly[index];
++            return ControllerFusion.Input.FusionInput.InputOnly || m_Config.dinputOnly[index];
+         }
+ 
+         public static int ProcessPriority
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2AudioHapticsLifetime.cs b/DS4Windows/DS4Control/Switch2/Switch2AudioHapticsLifetime.cs
+index bc52dde..a1b2694 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2AudioHapticsLifetime.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2AudioHapticsLifetime.cs
+@@ -4,6 +4,7 @@ namespace DS4Windows.Switch2;
+ 
+ internal interface ISwitch2AudioHapticsLifetime
+ {
++    string FusionFailure => "";
+     bool TryCreateAudioLane(out ControllerFeedbackStateLanePump.Lane lane);
+     bool TryPublishAudio(ControllerFeedbackStateLanePump.Lane lane,
+         in Switch2HdRumbleGroup left, in Switch2HdRumbleGroup right,
+@@ -20,9 +21,9 @@ internal static class Switch2AudioHapticsLifetime
+         in Switch2HdRumbleGroup left, in Switch2HdRumbleGroup right,
+         AudioHapticsMode mode, ulong captured, ulong now)
+     {
+-        if (captured > now || now - captured >= MaximumSampleAgeMicroseconds ||
+-            sink.HasUncertainWrite || !pump.AuthenticatesLane(lane,
+-                ControllerFeedbackPublicationOrigin.AudioHaptics, ControllerFeedbackSource.LocalAudioHaptics)) return false;
++        if (captured > now || now - captured >= MaximumSampleAgeMicroseconds) return false;
++        if(sink.HasUncertainWrite) return false;
++        if(!pump.AuthenticatesLane(lane,ControllerFeedbackPublicationOrigin.AudioHaptics,ControllerFeedbackSource.LocalAudioHaptics))return false;
+         // This is an explicit internal audio marker, not invented game feedback.
+         // Its timestamp is capture time; admission cannot renew a queued sample.
+         if (!lane.TryPublish(new ControllerFeedbackActuatorState(1, 1, 0, 0),
+@@ -59,6 +60,7 @@ internal static class Switch2AudioHapticsLifetime
+ 
+ internal sealed partial class Switch2BluetoothFeedbackLifetime : ISwitch2AudioHapticsLifetime
+ {
++    public string FusionFailure {get;private set;}="未提交";
+     public bool TryCreateAudioLane(out ControllerFeedbackStateLanePump.Lane lane)
+     {
+         sink.EnableAudioComposition(pump);
+@@ -71,10 +73,11 @@ internal sealed partial class Switch2BluetoothFeedbackLifetime : ISwitch2AudioHa
+         in Switch2HdRumbleGroup left, in Switch2HdRumbleGroup right,
+         AudioHapticsMode mode, ulong capturedMicroseconds, ulong nowMicroseconds)
+     {
+-        if (!Monitor.TryEnter(rumbleTransactionGate)) return false;
++        if (!Monitor.TryEnter(rumbleTransactionGate)) {FusionFailure="交易忙碌";return false;}
+         try
+         {
+-            if (!CanServiceRumbleMaintenance) return false;
++            if (!CanServiceRumbleMaintenance) {FusionFailure="輸出維護不可用";return false;}
++            FusionFailure=sink.HasUncertainWrite?"前次交付未確認":pump.AuthenticatesLane(lane,ControllerFeedbackPublicationOrigin.AudioHaptics,ControllerFeedbackSource.LocalAudioHaptics)?"時間／發布／暫存檢查":"音訊通道身份不符";
+             return WakeAfterRumblePublication(Switch2AudioHapticsLifetime.Publish(pump,
+                 sink, lane, left, right, mode, capturedMicroseconds, nowMicroseconds));
+         }
+@@ -83,10 +86,10 @@ internal sealed partial class Switch2BluetoothFeedbackLifetime : ISwitch2AudioHa
+ 
+     public bool TryWithdrawAudio(ControllerFeedbackStateLanePump.Lane lane, ulong nowMicroseconds)
+     {
+-        if (!Monitor.TryEnter(rumbleTransactionGate)) return false;
++        if (!Monitor.TryEnter(rumbleTransactionGate)) {FusionFailure="交易忙碌";return false;}
+         try
+         {
+-            if (!CanServiceRumbleMaintenance) return false;
++            if (!CanServiceRumbleMaintenance) {FusionFailure="輸出維護不可用";return false;}
+             return WakeAfterRumblePublication(Switch2AudioHapticsLifetime.Withdraw(pump, sink, lane, nowMicroseconds));
+         }
+         finally { Monitor.Exit(rumbleTransactionGate); }
+@@ -95,6 +98,7 @@ internal sealed partial class Switch2BluetoothFeedbackLifetime : ISwitch2AudioHa
+ 
+ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime : ISwitch2AudioHapticsLifetime
+ {
++    public string FusionFailure {get;private set;}="未提交";
+     public bool TryCreateAudioLane(out ControllerFeedbackStateLanePump.Lane lane)
+     {
+         sink.EnableAudioComposition(pump);
+@@ -107,13 +111,14 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime : ISw
+         in Switch2HdRumbleGroup left, in Switch2HdRumbleGroup right,
+         AudioHapticsMode mode, ulong capturedMicroseconds, ulong nowMicroseconds)
+     {
+-        if (!Monitor.TryEnter(rumbleTransactionGate)) return false;
++        if (!Monitor.TryEnter(rumbleTransactionGate)) {FusionFailure="交易忙碌："+FusionTransactionStage;return false;}
+         try
+         {
+-            if (Interlocked.CompareExchange(ref operationActive, 1, 0) != 0) return false;
++            if (Interlocked.CompareExchange(ref operationActive, 1, 0) != 0) {FusionFailure="USB 操作忙碌";return false;}
+             try
+             {
+-                if (!CanServiceRumbleMaintenance) return false;
++                if (!CanServiceRumbleMaintenance) {FusionFailure="輸出維護不可用";return false;}
++                FusionFailure=sink.HasUncertainWrite?"前次交付未確認":pump.AuthenticatesLane(lane,ControllerFeedbackPublicationOrigin.AudioHaptics,ControllerFeedbackSource.LocalAudioHaptics)?"時間／發布／暫存檢查":"音訊通道身份不符";
+                 return WakeAfterRumblePublication(Switch2AudioHapticsLifetime.Publish(pump,
+                     sink, lane, left, right, mode, capturedMicroseconds, nowMicroseconds));
+             }
+@@ -124,13 +129,13 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime : ISw
+ 
+     public bool TryWithdrawAudio(ControllerFeedbackStateLanePump.Lane lane, ulong nowMicroseconds)
+     {
+-        if (!Monitor.TryEnter(rumbleTransactionGate)) return false;
++        if (!Monitor.TryEnter(rumbleTransactionGate)) {FusionFailure="交易忙碌："+FusionTransactionStage;return false;}
+         try
+         {
+-            if (Interlocked.CompareExchange(ref operationActive, 1, 0) != 0) return false;
++            if (Interlocked.CompareExchange(ref operationActive, 1, 0) != 0) {FusionFailure="USB 操作忙碌";return false;}
+             try
+             {
+-                if (!CanServiceRumbleMaintenance) return false;
++                if (!CanServiceRumbleMaintenance) {FusionFailure="輸出維護不可用";return false;}
+                 return WakeAfterRumblePublication(Switch2AudioHapticsLifetime.Withdraw(pump, sink, lane, nowMicroseconds));
+             }
+             finally { Volatile.Write(ref operationActive, 0); }
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2BluetoothWindowsAdapter.cs b/DS4Windows/DS4Control/Switch2/Switch2BluetoothWindowsAdapter.cs
+index 6b98c16..81fd80a 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2BluetoothWindowsAdapter.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2BluetoothWindowsAdapter.cs
+@@ -1340,6 +1340,18 @@ internal sealed class Switch2BluetoothWindowsAdapter
+                     return;
+                 }
+ 
++                if (ControllerFusion.Input.FusionInput.InputOnly)
++                {
++                    if(advertisement.Model!=Switch2ControllerModel.ProController2) return;
++                    ControllerFusion.Input.FusionInput.TraceAdvertisement(
++                        advertisement.Model.ToString(),advertisement.IsWake,
++                        advertisement.Host.ToString());
++                    // Fusion's verified known-host Home wake: preserve the exact
++                    // peer/address/UUID gates, but permit a Home wake from a Pro2
++                    // already associated with this host to attempt GATT startup.
++                    advertisement = ControllerFusion.Input.FusionInput.
++                        NormalizeKnownProWake(advertisement);
++                }
+                 observation = registry.Observe(lifetime.Generation, peerToken,
+                     observedQpc, advertisement);
+                 if (observation.IsConnectionCandidate)
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedCompositeRegistrationParticipant.cs b/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedCompositeRegistrationParticipant.cs
+index 07df089..af8fa25 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedCompositeRegistrationParticipant.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedCompositeRegistrationParticipant.cs
+@@ -1,4 +1,4 @@
+-/*
++﻿/*
+ DS4Windows
+ Copyright (C) 2026 hbashton
+ 
+@@ -1072,6 +1072,32 @@ internal sealed class Switch2ProUsbOwnedCompositeRegistrationParticipant :
+         Switch2RuntimeRegistrationParticipantResult stopResult = Invoke(
+             () => inner.TryStopAndQuiesce(RemainingMilliseconds(deadline,
+                 timeoutMilliseconds)), operation);
++        // The table has already drained callback leases. Its publication gate
++        // can nevertheless open just before the owner's publication finally
++        // block clears its wider guard. Retry only this proven, non-quarantined
++        // refusal; never retry an uncertain native stop or extend the deadline.
++        while (stopResult.IsValid && stopResult.Outcome ==
++                Switch2RuntimeRegistrationParticipantOutcome.ProvenRejected &&
++            stopResult.FailureKind == Switch2RuntimeRegistrationParticipantFailureKind.StopRejected &&
++            stopResult.OwnerFailure == InputControllerOwnerOperationFailure.StopRejected &&
++            stopResult.QuarantineReason == InputControllerSlotQuarantineReason.StopRejected &&
++            runtimeOwner.LastStopFailure.Kind ==
++                Switch2ProUsbRuntimeStopFailureKind.OperationAlreadyInProgress &&
++            !runtimeOwner.LastStopFailure.RequiresQuarantine)
++        {
++            int remaining = RemainingMilliseconds(deadline, timeoutMilliseconds);
++            if (remaining == 0) break;
++            var publication = Invoke(() =>
++                inner.TryWaitForPublicationAvailability(remaining),
++                Switch2RuntimeRegistrationParticipantOperation.
++                    WaitForPublicationAvailability);
++            if (!publication.Succeeded) break;
++            System.Threading.Thread.Sleep(1);
++            remaining = RemainingMilliseconds(deadline, timeoutMilliseconds);
++            if (remaining == 0) break;
++            stopResult = Invoke(() => inner.TryStopAndQuiesce(remaining),
++                operation);
++        }
+         if (!stopResult.Succeeded)
+         {
+             lock (gate)
+@@ -1489,6 +1515,9 @@ internal sealed class Switch2ProUsbOwnedCompositeRegistrationParticipant :
+         return succeeded;
+     }
+ 
++    internal string DescribeFusionFeedback() => feedback is Switch2ProUsbOwnedFeedbackActivationLifetime concrete
++        ? concrete.DescribeWirePublication() : "other-owner";
++
+     private bool TryNeutralizeFeedback(long deadline, int originalTimeout)
+     {
+         Switch2ProUsbOwnedFeedbackQuiescenceResult quiescence = default;
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedFeedbackActivationLifetime.cs b/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedFeedbackActivationLifetime.cs
+index 197a3fb..f7c9690 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedFeedbackActivationLifetime.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedFeedbackActivationLifetime.cs
+@@ -79,6 +79,8 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+     // Serializes complete rich publication transactions, not just individual
+     // physical writes. Input-side drain and periodic maintenance use TryEnter.
+     private readonly object rumbleTransactionGate = new();
++    private string fusionTransactionStage="閒置";
++    internal string FusionTransactionStage => Volatile.Read(ref fusionTransactionStage);
+     private Action rumbleMaintenanceWake;
+ 
+     internal void SetRumbleMaintenanceWake(Action wake)
+@@ -142,7 +144,8 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+     {
+         lock (gate)
+             return $"stage={wirePublicationStage}, ownerState={state}, " +
+-                $"pump={wirePublicationDisposition}, physical={sink.LastFailure}";
++                $"pump={wirePublicationDisposition}, physical={sink.LastFailure}, " +
++                $"bridge={bridge.State}, transaction={FusionTransactionStage}";
+     }
+ 
+     private Switch2ProUsbOwnedFeedbackActivationLifetime(
+@@ -364,8 +367,12 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+         in Switch2HdRumbleBodyTuning bodyTuning)
+     {
+         lock (rumbleTransactionGate)
+-            return WakeAfterRumblePublication(TryPublishAndPumpCore(session,
+-                ingress, wire, policy, impulseTuning, bodyTuning));
++        {
++            Volatile.Write(ref fusionTransactionStage,"遊戲發布");
++            try {return WakeAfterRumblePublication(TryPublishAndPumpCore(session,
++                ingress, wire, policy, impulseTuning, bodyTuning));}
++            finally {Volatile.Write(ref fusionTransactionStage,"閒置");}
++        }
+     }
+ 
+     private bool TryPublishAndPumpCore(Switch2VirtualFeedbackSession session,
+@@ -417,7 +424,11 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+         in ControllerFeedbackFrame frame, Switch2XboxFeedbackPolicy policy)
+     {
+         lock (rumbleTransactionGate)
+-            return WakeAfterRumblePublication(TryRefreshXboxOutputPolicyCore(session, frame, policy));
++        {
++            Volatile.Write(ref fusionTransactionStage,"遊戲策略更新");
++            try {return WakeAfterRumblePublication(TryRefreshXboxOutputPolicyCore(session, frame, policy));}
++            finally {Volatile.Write(ref fusionTransactionStage,"閒置");}
++        }
+     }
+ 
+     private bool TryRefreshXboxOutputPolicyCore(Switch2VirtualFeedbackSession session,
+@@ -453,8 +464,12 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+         ulong expiresAtMicroseconds = 0)
+     {
+         lock (rumbleTransactionGate)
+-            return WakeAfterRumblePublication(TryPublishAndPumpCore(session,
+-                ingress, feedbackState, policy, impulseTuning, bodyTuning, expiresAtMicroseconds));
++        {
++            Volatile.Write(ref fusionTransactionStage,"遊戲發布");
++            try {return WakeAfterRumblePublication(TryPublishAndPumpCore(session,
++                ingress, feedbackState, policy, impulseTuning, bodyTuning, expiresAtMicroseconds));}
++            finally {Volatile.Write(ref fusionTransactionStage,"閒置");}
++        }
+     }
+ 
+     private bool TryPublishAndPumpCore(Switch2VirtualFeedbackSession session,
+@@ -508,8 +523,12 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+         ulong expiresAtMicroseconds = 0)
+     {
+         lock (rumbleTransactionGate)
+-            return WakeAfterRumblePublication(TryPublishSourcePreservedAndPumpCore(
+-                session, ingress, feedbackState, fidelity, left, right, bodyTuning, expiresAtMicroseconds));
++        {
++            Volatile.Write(ref fusionTransactionStage,"遊戲發布");
++            try {return WakeAfterRumblePublication(TryPublishSourcePreservedAndPumpCore(
++                session, ingress, feedbackState, fidelity, left, right, bodyTuning, expiresAtMicroseconds));}
++            finally {Volatile.Write(ref fusionTransactionStage,"閒置");}
++        }
+     }
+ 
+     private bool TryPublishSourcePreservedAndPumpCore(
+@@ -594,8 +613,12 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+         ulong presentationRevision)
+     {
+         lock (rumbleTransactionGate)
+-            return WakeAfterRumblePublication(TryRefreshCurrentPresentationCore(
+-                session, canonicalFrame, presentationRevision));
++        {
++            Volatile.Write(ref fusionTransactionStage,"遊戲策略更新");
++            try {return WakeAfterRumblePublication(TryRefreshCurrentPresentationCore(
++                session, canonicalFrame, presentationRevision));}
++            finally {Volatile.Write(ref fusionTransactionStage,"閒置");}
++        }
+     }
+ 
+     private bool TryRefreshCurrentPresentationCore(
+@@ -1153,10 +1176,13 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+                     if (state != Switch2ProUsbOwnedFeedbackActivationState.Committed)
+                         return ControllerFeedbackPumpDisposition.None;
+                 }
++                Volatile.Write(ref fusionTransactionStage,"維護：續期本機狀態");
+                 renewLocalState?.Invoke(nowMicroseconds);
++                Volatile.Write(ref fusionTransactionStage,"維護：更新呈現狀態");
+                 if (!pump.TryRefreshCurrentPresentation(nowMicroseconds,
+                         allowNoFrame: true, applyOnly: true))
+                     return ControllerFeedbackPumpDisposition.Busy;
++                Volatile.Write(ref fusionTransactionStage,"維護：傳送輸出");
+                 ControllerFeedbackPumpDisposition disposition = pump.PumpOnce(
+                     nowMicroseconds, sink.MaintenanceSink, out _);
+                 if (disposition < ControllerFeedbackPumpDisposition.None ||
+@@ -1172,7 +1198,7 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+             }
+             finally { Volatile.Write(ref operationActive, 0); }
+         }
+-        finally { Monitor.Exit(rumbleTransactionGate); }
++        finally {Volatile.Write(ref fusionTransactionStage,"閒置");Monitor.Exit(rumbleTransactionGate);}
+     }
+ 
+     /// <summary>
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2ProUsbProductionCoordinator.cs b/DS4Windows/DS4Control/Switch2/Switch2ProUsbProductionCoordinator.cs
+index badeadb..dfd09b7 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2ProUsbProductionCoordinator.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2ProUsbProductionCoordinator.cs
+@@ -1,4 +1,4 @@
+-/*
++﻿/*
+ DS4Windows
+ Copyright (C) 2026 hbashton
+ 
+@@ -172,9 +172,10 @@ internal sealed class Switch2ProUsbProductionCoordinator
+         bool complete = true;
+         for (int index = 0; index < tokens.Length; index++)
+         {
+-            if (!registrations.TryRemove(tokens[index],
+-                    LifecycleTimeoutMilliseconds, out var failure) &&
+-                IsTokenStillPresent(tokens[index]))
++            var retirement = await registrations.TryRemoveAfterCallbacksAsync(
++                tokens[index], LifecycleTimeoutMilliseconds).ConfigureAwait(false);
++            var failure = retirement.Failure;
++            if (!retirement.Removed && IsTokenStillPresent(tokens[index]))
+             {
+                 complete = false;
+                 Switch2RuntimeRegistrationParticipantResult result =
+@@ -203,7 +204,8 @@ internal sealed class Switch2ProUsbProductionCoordinator
+                     $"quarantine={inputStop.RequiresQuarantine}; " +
+                     $"host={slotParticipant?.LastHostResult.Operation.ToString() ?? "none"}/" +
+                     $"{slotParticipant?.LastHostResult.Outcome.ToString() ?? "none"}/" +
+-                    $"{slotParticipant?.LastHostResult.FailureKind.ToString() ?? "none"}.");
++                    $"{slotParticipant?.LastHostResult.FailureKind.ToString() ?? "none"}; " +
++                    $"output={ownedParticipant?.DescribeFusionFeedback() ?? "none"}.");
+             }
+         }
+ 
+@@ -523,6 +525,11 @@ internal sealed class Switch2ProUsbProductionCoordinator
+                     Diagnostic("Switch 2 Pro USB gyro calibration persistence could not bind; this connection will recalibrate in memory.");
+                 }
+             }
++            var observedOwner=participant.RuntimeOwner;
++            observedOwner.LifecycleAttention+=(_,e)=>Diagnostic(
++                $"Switch 2 Pro USB runtime attention: kind={e.Kind}; " +
++                $"input={observedOwner.LastInputFailure}; mapping={observedOwner.LastProfileMappingFailure}; " +
++                $"pump={observedOwner.ReadPump.TerminalFailure}.");
+             if (!registrations.TryAttachOwnedUsb(participant, host,
+                     LifecycleTimeoutMilliseconds,
+                     out InputControllerSlotToken token,
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2ProUsbWindowsNativePlatform.cs b/DS4Windows/DS4Control/Switch2/Switch2ProUsbWindowsNativePlatform.cs
+index 914af82..16f466b 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2ProUsbWindowsNativePlatform.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2ProUsbWindowsNativePlatform.cs
+@@ -128,6 +128,12 @@ internal sealed class Switch2ProUsbWindowsNativePlatform :
+                 try
+                 {
+                     HidToken hid = containerHids[0];
++                    // Fusion imports Nintendo personas through USB/IP. Such
++                    // devices are outputs and must never become physical inputs.
++                    if (ControllerFusion.Input.FusionInput.InputOnly &&
++                        Global.TryResolveUsbIpWin2Device(hid.Path,
++                            out bool usbipAncestor, out _) && usbipAncestor)
++                        continue;
+                     CommandNode[] commandNodes = commandSnapshot.Nodes.Where(
+                         node => node.ContainerId == hid.ContainerId).Take(2).
+                         ToArray();
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2RuntimeInputDevice.AudioHaptics.cs b/DS4Windows/DS4Control/Switch2/Switch2RuntimeInputDevice.AudioHaptics.cs
+index c097e95..75c07dc 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2RuntimeInputDevice.AudioHaptics.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2RuntimeInputDevice.AudioHaptics.cs
+@@ -1,4 +1,4 @@
+-using System;
++﻿using System;
+ using System.Diagnostics;
+ using System.Threading;
+ 
+@@ -34,6 +34,8 @@ public sealed partial class Switch2RuntimeInputDevice
+         try { timestamp = audioHapticsClock(); return true; }
+         catch { timestamp = 0; return false; }
+     }
++    internal string FusionAudioFailure {get;private set;}="尚未提交";
++    private bool RejectFusionAudio(string reason) {FusionAudioFailure=reason;return false;}
+     private Switch2AudioHapticsOutput audioHapticsOutput;
+     private ISwitch2AudioHapticsLifetime audioHapticsLifetime;
+     private ControllerFeedbackStateLanePump.Lane audioHapticsLane;
+@@ -86,10 +88,11 @@ public sealed partial class Switch2RuntimeInputDevice
+             capturedTimestamp < 0 || !ControllerFeedbackClock.TryConvertQpcTicks(
+                 (ulong)capturedTimestamp, (ulong)Stopwatch.Frequency, out ulong captured) ||
+             !TryGetAudioHapticsTimestamp(out ulong now) ||
+-            captured > now || now - captured >= Switch2AudioHapticsLifetime.MaximumSampleAgeMicroseconds) return false;
++            captured > now || now - captured >= Switch2AudioHapticsLifetime.MaximumSampleAgeMicroseconds) return RejectFusionAudio("格式／時鐘／期限檢查");
+         lock (localFeedbackGate)
+         {
+-            if (!ReferenceEquals(output, audioHapticsOutput) || !TryBindAudioHapticsLifetimeNoLock()) return false;
++            if (!ReferenceEquals(output, audioHapticsOutput))return RejectFusionAudio("音訊 producer 已被替換");
++            if(!TryBindAudioHapticsLifetimeNoLock()) return RejectFusionAudio("無法綁定音訊通道");
+             int slot = DeviceSlotNumber;
+             if (slot < 0 || slot >= Global.EnableOutputDataToDS4.Length || !Global.EnableOutputDataToDS4[slot])
+             {
+@@ -101,7 +104,9 @@ public sealed partial class Switch2RuntimeInputDevice
+             if (!HasAudioAmplitude(left) && !HasAudioAmplitude(right)) return WithdrawAudioHapticsNoLock();
+             if (!TryGetAudioHapticsTimestamp(out now) ||
+                 captured > now || now - captured >= Switch2AudioHapticsLifetime.MaximumSampleAgeMicroseconds) return false;
+-            return audioHapticsLifetime.TryPublishAudio(audioHapticsLane, left, right, mode, captured, now);
++            bool accepted=audioHapticsLifetime.TryPublishAudio(audioHapticsLane, left, right, mode, captured, now);
++            FusionAudioFailure=accepted?"已接受原生音訊":"原生音訊提交被拒絕："+audioHapticsLifetime.FusionFailure;
++            return accepted;
+         }
+     }
+ 
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2RuntimeRegistrationService.cs b/DS4Windows/DS4Control/Switch2/Switch2RuntimeRegistrationService.cs
+index f72b375..750599b 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2RuntimeRegistrationService.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2RuntimeRegistrationService.cs
+@@ -1,4 +1,4 @@
+-/*
++﻿/*
+ DS4Windows
+ Copyright (C) 2026 hbashton
+ 
+@@ -352,6 +352,32 @@ internal sealed class Switch2RuntimeRegistrationService
+             timeoutMilliseconds, out token, out failure);
+     }
+ 
++    // Control-plane shutdown only. Keep TryRemove's immediate reentrant and
++    // cross-thread callback refusal intact, so a callback cannot wait on a stop
++    // that joins its own worker. Only an ordinary active callback is retried;
++    // all native, ownership and terminal-neutral failures remain fail-closed.
++    internal async System.Threading.Tasks.Task<(bool Removed,
++        Switch2RuntimeRegistrationTransactionFailure Failure)>
++        TryRemoveAfterCallbacksAsync(InputControllerSlotToken token,
++            int timeoutMilliseconds)
++    {
++        long deadline = Environment.TickCount64 + timeoutMilliseconds;
++        int remaining = timeoutMilliseconds;
++        while (true)
++        {
++            bool removed = core.TryRemove(token, remaining, out var failure);
++            if (removed || failure.Kind !=
++                    Switch2RuntimeRegistrationTransactionFailureKind.CallbackActive)
++                return (removed, failure);
++            remaining = (int)Math.Max(0L, deadline - Environment.TickCount64);
++            if (remaining == 0) return (false, failure);
++            await System.Threading.Tasks.Task.Delay(Math.Min(5, remaining)).
++                ConfigureAwait(false);
++            remaining = (int)Math.Max(0L, deadline - Environment.TickCount64);
++            if (remaining == 0) return (false, failure);
++        }
++    }
++
+     internal bool TryRemove(in InputControllerSlotToken token,
+         int timeoutMilliseconds,
+         out Switch2RuntimeRegistrationTransactionFailure failure) =>
+diff --git a/DS4Windows/DS4WinWPF.csproj b/DS4Windows/DS4WinWPF.csproj
+index f7db86b..076e6d6 100644
+--- a/DS4Windows/DS4WinWPF.csproj
++++ b/DS4Windows/DS4WinWPF.csproj
+@@ -1,4 +1,4 @@
+-<Project Sdk="Microsoft.NET.Sdk">
++﻿<Project Sdk="Microsoft.NET.Sdk">
+ 
+ 	<PropertyGroup>
+ 		<OutputType>WinExe</OutputType>
+@@ -69,6 +69,11 @@
+ 	</PropertyGroup>
+ 
+ 	<ItemGroup>
++		<Compile Include="..\..\..\src\ControllerFusion.Input\FusionInput.cs" Link="FusionInput.cs" />
++    <Compile Include="..\..\..\src\ControllerFusion.Input\FusionAdvanced.cs" Link="Fusion\FusionAdvanced.cs" />
++    <Compile Include="..\..\..\src\ControllerFusion.Input\FusionAudioTests.cs" Link="Fusion\FusionAudioTests.cs" />
++    <Compile Include="..\..\..\src\ControllerFusion.Input\FusionHidingJournal.cs" Link="Fusion\FusionHidingJournal.cs" />
++    <Compile Include="..\..\..\src\ControllerFusion.Input\PcmHapticsResampler.cs" Link="Fusion\PcmHapticsResampler.cs" />
+ 		<Compile Include="..\installer\StartupSetupState.cs" Link="StartupSetupState.cs" />
+ 		<None Remove="libs\x64\**" Condition="'$(Platform)' != 'x64'" />
+ 		<None Remove="libs\x86\**" Condition="'$(Platform)' != 'x86'" />
+diff --git a/DS4WindowsTests/FusionAudioFormatTests.cs b/DS4WindowsTests/FusionAudioFormatTests.cs
+new file mode 100644
+index 0000000..f3fc528
+--- /dev/null
++++ b/DS4WindowsTests/FusionAudioFormatTests.cs
+@@ -0,0 +1,46 @@
++using System.Buffers.Binary;
++using ControllerFusion.Input;
++using NAudio.Wave;
++
++namespace DS4WindowsTests;
++
++[TestClass]
++public sealed class FusionAudioFormatTests
++{
++    [TestMethod]
++    public void FourChannelEndpointRetainsItsExtensibleFormatAndChannelOrder()
++    {
++        var format=new WaveFormatExtensible(48000,32,4);
++        var output=FusionAudioFormat.ForEndpoint(new OneFrame(),format);
++        Assert.AreSame(format,output.WaveFormat,"WASAPI needs the endpoint's channel mask/subformat.");
++        var bytes=new byte[16];Assert.AreEqual(16,output.Read(bytes,0,bytes.Length));
++        CollectionAssert.AreEqual(new byte[8],bytes[..8]);
++        Assert.AreEqual(.25f,BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(8)));
++        Assert.AreEqual(-.25f,BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(12)));
++    }
++    [TestMethod]
++    public void Pcm16EndpointReceivesPcm16RatherThanFloatBytes()
++    {
++        var format=new WaveFormat(48000,16,4);
++        var output=FusionAudioFormat.ForEndpoint(new OneFrame(),format);
++        var bytes=new byte[8];Assert.AreEqual(8,output.Read(bytes,0,8));
++        Assert.AreSame(format,output.WaveFormat);
++        Assert.IsTrue(BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(4)) is >=8000 and <=8300);
++        Assert.IsTrue(BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(6)) is <=-8000 and >=-8300);
++    }
++    [TestMethod]
++    public void HapticAudioRejectsMismatchedChannelCounts()
++    {
++        Assert.ThrowsException<InvalidOperationException>(()=>FusionAudioFormat.ForEndpoint(new OneFrame(),new WaveFormat(48000,16,2)));
++    }
++    sealed class OneFrame:ISampleProvider
++    {
++        bool read;
++        public WaveFormat WaveFormat {get;}=WaveFormat.CreateIeeeFloatWaveFormat(48000,4);
++        public int Read(float[] buffer,int offset,int count)
++        {
++            if(read)return 0;read=true;
++            buffer[offset]=buffer[offset+1]=0;buffer[offset+2]=.25f;buffer[offset+3]=-.25f;return 4;
++        }
++    }
++}
+diff --git a/DS4WindowsTests/FusionNativeWriteCompletionTests.cs b/DS4WindowsTests/FusionNativeWriteCompletionTests.cs
+new file mode 100644
+index 0000000..59dc814
+--- /dev/null
++++ b/DS4WindowsTests/FusionNativeWriteCompletionTests.cs
+@@ -0,0 +1,86 @@
++using System.IO;
++using System.IO.Pipes;
++using System.Runtime.InteropServices;
++using Microsoft.Win32.SafeHandles;
++using DS4Windows.Switch2;
++
++namespace DS4WindowsTests;
++
++[TestClass]
++public sealed class FusionNativeWriteCompletionTests
++{
++    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
++    private static extern SafeFileHandle CreateFileW(string path,uint access,uint sharing,
++        IntPtr security,uint creation,uint flags,IntPtr template);
++
++    [TestMethod]
++    public void RealPendingWindowsWriteCanBeCancelledAndRetiredExactly()
++    {
++        // A local pipe with no reader provides real pending I/O without USB.
++        var name="Fusion-Cancel-"+Guid.NewGuid().ToString("N");
++        using var server=new NamedPipeServerStream(name,PipeDirection.In,1,
++            PipeTransmissionMode.Byte,PipeOptions.Asynchronous,4096,4096);
++        var connection=server.WaitForConnectionAsync();
++        using var file=CreateFileW(@"\\.\pipe\"+name,0x40000000,0,IntPtr.Zero,3,0x40000000,IntPtr.Zero);
++        Assert.IsFalse(file.IsInvalid);
++        Assert.IsTrue(connection.Wait(1000));
++        var bound=ThreadPoolBoundHandle.BindHandle(file);
++        var operation=new Switch2ProUsbWindowsOwnedFileWriteOperation(file,bound);
++        bool active=false;
++        try
++        {
++            Assert.IsTrue(operation.TryStart(new byte[1024*1024],0,1024*1024));active=true;
++            Assert.IsFalse(operation.TryWaitForNativeQuiescence(0),"Unread pipe should retain the write.");
++            Assert.IsTrue(operation.TryCancelExact());
++            Assert.IsTrue(operation.TryWaitForNativeQuiescence(1000),"Cancelled native write did not complete.");
++            Assert.IsTrue(operation.TryGetCompletion(out var completion));
++            Assert.AreNotEqual(1024*1024,completion.BytesTransferred);
++            operation.ReleaseSubmissionQuiesced();active=false;
++        }
++        finally
++        {
++            if(active)
++            {
++                operation.TryCancelExact();
++                if(operation.TryWaitForNativeQuiescence(2000))
++                {operation.ReleaseSubmissionQuiesced();active=false;}
++            }
++            if(!active){operation.DisposeOwnerQuiesced();bound.Dispose();}
++        }
++    }
++
++    [TestMethod]
++    public void RealWindowsOverlappedWritePublishesCompletionAndCanBeReused()
++    {
++        // Exercise the production WriteFile / IOCP operation against a private
++        // temporary file. No controller, driver, device discovery or USB is used.
++        var path=Path.Combine(Path.GetTempPath(),"Fusion-Iocp-"+Guid.NewGuid().ToString("N")+".bin");
++        using var file=CreateFileW(path,0xC0000000,3,IntPtr.Zero,1,0x44000000,IntPtr.Zero);
++        Assert.IsFalse(file.IsInvalid);
++        var bound=ThreadPoolBoundHandle.BindHandle(file);
++        var operation=new Switch2ProUsbWindowsOwnedFileWriteOperation(file,bound);
++        bool active=false;
++        try
++        {
++            var bytes=Enumerable.Range(0,64).Select(i=>(byte)i).ToArray();
++            for(int iteration=0;iteration<10;iteration++)
++            {
++                Assert.IsTrue(operation.TryStart(bytes,0,bytes.Length));active=true;
++                Assert.IsTrue(operation.TryWaitForNativeQuiescence(1000),"Actual IOCP completion was not published.");
++                Assert.IsTrue(operation.TryGetCompletion(out var completion));
++                Assert.AreEqual(64,completion.BytesTransferred);
++                operation.ReleaseSubmissionQuiesced();active=false;
++            }
++        }
++        finally
++        {
++            if(active)
++            {
++                operation.TryCancelExact();
++                if(operation.TryWaitForNativeQuiescence(2000))
++                {operation.ReleaseSubmissionQuiesced();active=false;}
++            }
++            if(!active){operation.DisposeOwnerQuiesced();bound.Dispose();}
++        }
++    }
++}
+diff --git a/DS4WindowsTests/Switch2AudioHapticsUsbTests.cs b/DS4WindowsTests/Switch2AudioHapticsUsbTests.cs
+index 50cae95..db39a8e 100644
+--- a/DS4WindowsTests/Switch2AudioHapticsUsbTests.cs
++++ b/DS4WindowsTests/Switch2AudioHapticsUsbTests.cs
+@@ -9,6 +9,137 @@ namespace DS4WindowsTests;
+ [DoNotParallelize]
+ public sealed class Switch2AudioHapticsUsbTests
+ {
++    [TestMethod]
++    public void FusionNintendoHdCanResumeAfterZeroRumbleGroups()
++    {
++        using var f=new UsbFixture(attachRuntime:true);
++        using var feedback=new ControllerFusion.Input.FusionFeedback(f.Runtime,0,"Steam / Pro2");
++        void Feed(Switch2HdRumbleGroup left,Switch2HdRumbleGroup right)
++        {
++            var data=new byte[34];data[32]=1;
++            Assert.IsTrue(Switch2HdRumbleGroupCodec.TryEncode(0,left,data.AsSpan(0,16)));
++            Assert.IsTrue(Switch2HdRumbleGroupCodec.TryEncode(0,right,data.AsSpan(16,16)));
++            Assert.IsTrue(feedback.Route(data,100,true,true));
++        }
++        Feed(f.Left,f.Right);f.AssertReport(f.ReportCount-1,f.Left,f.Right);
++        Feed(default,default);f.AssertLastReportSilent();
++        int count=f.ReportCount;
++        Feed(f.Left,f.Right);
++        Assert.IsTrue(f.ReportCount>count,"A zero HD group must not terminally seal subsequent native game feedback.");
++        f.AssertReport(f.ReportCount-1,f.Left,f.Right);
++    }
++
++    [TestMethod]
++    public void FusionPcmCanResumeAfterSilenceWithoutRetiringTheGameSession()
++    {
++        using var f=new UsbFixture(attachRuntime:true);
++        using var feedback=new ControllerFusion.Input.FusionFeedback(f.Runtime,0,"PS5");
++        int frame=0;
++        void Feed(double amplitude,int packets)
++        {
++            for(int packet=0;packet<packets;packet++)
++            {
++                var data=new byte[388];data[0]=2;data[1]=0x80;data[2]=1;
++                for(int i=4;i<data.Length;i+=8,frame++)
++                {
++                    short sample=(short)(amplitude*Math.Sin(2*Math.PI*110*frame/48000));
++                    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(i+4),sample);
++                    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(i+6),sample);
++                }
++                feedback.Route(data,65,true,true);
++            }
++        }
++        Feed(9000,12);Assert.IsTrue(feedback.Statistics.AcceptedPcmWindows>0);
++        Feed(0,24);f.AssertLastReportSilent();
++        long beforeResume=feedback.Statistics.AcceptedPcmWindows;
++        Feed(9000,24);
++        Assert.IsTrue(feedback.Statistics.AcceptedPcmWindows>beforeResume,"Silence must stop the effect without sealing the reusable game ingress.");
++        Assert.AreEqual(0L,feedback.Statistics.RejectedNeutralWindows);
++    }
++
++    [TestMethod]
++    public void FusionPcmRouteReportsAcceptedAndRejectedWindowsWithoutConflatingThem()
++    {
++        using var f=new UsbFixture(attachRuntime:true);
++        using var feedback=new ControllerFusion.Input.FusionFeedback(f.Runtime,0,"PS5");
++        Assert.IsTrue(feedback.NativeHdAvailable);
++        int frame=0;
++        void Publish()
++        {
++            for(int packet=0;packet<12;packet++)
++            {
++                var data=new byte[388];data[0]=2;data[1]=0x80;data[2]=1;
++                for(int i=4;i<data.Length;i+=8,frame++)
++                {
++                    short sample=(short)(9000*Math.Sin(2*Math.PI*110*frame/48000));
++                    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(i+4),sample);
++                    System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(i+6),sample);
++                }
++                Assert.IsTrue(feedback.Route(data,65,true,true));
++            }
++        }
++        Publish();Assert.IsTrue(feedback.Statistics.AcceptedPcmWindows>0);
++        long accepted=feedback.Statistics.AcceptedPcmWindows;
++        var operation=typeof(Switch2ProUsbOwnedFeedbackActivationLifetime).GetField("operationActive",BindingFlags.Instance|BindingFlags.NonPublic)!;
++        operation.SetValue(f.Feedback,1);
++        try {Publish();}
++        finally {operation.SetValue(f.Feedback,0);}
++        Assert.AreEqual(accepted,feedback.Statistics.AcceptedPcmWindows);
++        Assert.IsTrue(feedback.Statistics.RejectedPcmWindows>0);
++        Assert.IsFalse(string.IsNullOrEmpty(feedback.Statistics.LastRejection));
++        Publish();Assert.IsTrue(feedback.Statistics.AcceptedPcmWindows>accepted);
++    }
++
++    [TestMethod]
++    public void BusyGameWriteRejectsAudioPromptlyAndRecoversAfterWriterReturns()
++    {
++        using var f=new UsbFixture(attachRuntime:true);
++        Assert.IsTrue(f.Feedback.TryCreateVirtualFeedbackSession(ControllerFeedbackSource.Xbox360VirtualDevice,out var game));
++        Assert.IsTrue(f.Runtime.TryCreateAudioHapticsOutput(out var output));
++        try
++        {
++            Assert.IsTrue(output.TryWrite(f.Samples,AudioHapticsMode.Mix,Stopwatch.GetTimestamp()));
++            Assert.IsTrue(output.TryWrite(new byte[64],AudioHapticsMode.Mix,Stopwatch.GetTimestamp()));
++            f.BlockWrite=true;
++            Task<bool> publication=null;
++            try
++            {
++                publication=Task.Run(()=>game.TryPublish(new ControllerFeedbackActuatorState(20000,20000,0,0)));
++                Assert.IsTrue(f.WriteEntered.Wait(1000),"Synthetic writer did not enter.");
++                var rejection=Task.Run(()=>output.TryWrite(f.Samples,AudioHapticsMode.Mix,Stopwatch.GetTimestamp()));
++                Assert.IsTrue(rejection.Wait(500),"Audio must not wait for a blocked game write.");
++                Assert.IsFalse(rejection.Result);
++                StringAssert.Contains(f.Runtime.FusionAudioFailure,"遊戲發布");
++            }
++            finally
++            {
++                f.BlockWrite=false;f.AllowWrite.Set();
++                if(publication!=null) Assert.IsTrue(publication.Wait(1500),"Synthetic writer did not release.");
++            }
++            Assert.AreEqual("閒置",f.Feedback.FusionTransactionStage);
++            Assert.IsTrue(output.TryWrite(f.Samples,AudioHapticsMode.Mix,Stopwatch.GetTimestamp()),f.Runtime.FusionAudioFailure);
++        }
++        finally {output.Dispose();game.TryRetire();}
++    }
++
++    [DataTestMethod]
++    [DataRow(3)]
++    [DataRow(6)]
++    [DataRow(80)]
++    public void FusionAudioCanPublishWithAnOpenVirtualGameSessionAtLowAmplitude(int amplitude)
++    {
++        using var f=new UsbFixture(attachRuntime:true);
++        Assert.IsTrue(f.Feedback.TryCreateVirtualFeedbackSession(ControllerFeedbackSource.Xbox360VirtualDevice,out var game));
++        try
++        {
++            Assert.IsTrue(f.Runtime.TryCreateAudioHapticsOutput(out var output));
++            var samples=Enumerable.Range(0,64).Select(i=>unchecked((byte)(sbyte)(Math.Sin(i/2.0*.4)*amplitude))).ToArray();
++            Assert.IsTrue(output.TryWrite(samples,AudioHapticsMode.Mix,Stopwatch.GetTimestamp()),f.Runtime.FusionAudioFailure);
++            output.Dispose();
++        }
++        finally {game.TryRetire();}
++    }
++
+     [TestMethod]
+     public void LocalAudioGroupsUseTheExistingAdoptedUsbWriterAndTerminalRetirement()
+     {
+@@ -136,6 +267,9 @@ public sealed class Switch2AudioHapticsUsbTests
+             Feedback.SetRumbleMaintenanceWake(null);
+         }
+ 
++        internal bool BlockWrite {set=>lease.GetType().GetField("BlockWrite",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(lease,value);}
++        internal ManualResetEventSlim WriteEntered => (ManualResetEventSlim)Field(lease,"WriteEntered");
++        internal ManualResetEventSlim AllowWrite => (ManualResetEventSlim)Field(lease,"AllowWrite");
+         internal int ReportCount => Property<int>(lease, "ReportCount");
+         internal int AdoptionCount => (int)Field(lease, "AdoptionCount");
+         internal int DirectWriteCount => (int)Field(lease, "DirectWriteCount");
+@@ -145,6 +279,14 @@ public sealed class Switch2AudioHapticsUsbTests
+                 .GetMethod("ServiceRumbleMaintenance", BindingFlags.Instance | BindingFlags.NonPublic)!
+                 .Invoke(Runtime, new object[] { now })!;
+ 
++        internal void AssertLastReportSilent()
++        {
++            byte[] report=(byte[])lease.GetType().GetMethod("ReportAt",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(lease,new object[]{ReportCount-1})!;
++            Assert.IsTrue(Switch2UsbHdRumbleCodec.TryDecodeProController(report,out _,out var left,out var right,out _));
++            foreach(var group in new[]{left,right})
++                Assert.IsFalse(group.First.HasNonzeroAmplitude || group.Second.HasNonzeroAmplitude || group.Third.HasNonzeroAmplitude,"Silence must remove all physical oscillator amplitudes; neutral carrier frequencies may remain.");
++        }
++
+         internal void AssertReport(int index, Switch2HdRumbleGroup left, Switch2HdRumbleGroup right)
+         {
+             byte[] report = (byte[])lease.GetType().GetMethod("ReportAt",
+diff --git a/DS4WindowsTests/Switch2ProUsbOwnedCompositeRegistrationParticipantTests.cs b/DS4WindowsTests/Switch2ProUsbOwnedCompositeRegistrationParticipantTests.cs
+index b9160ec..6c206ec 100644
+--- a/DS4WindowsTests/Switch2ProUsbOwnedCompositeRegistrationParticipantTests.cs
++++ b/DS4WindowsTests/Switch2ProUsbOwnedCompositeRegistrationParticipantTests.cs
+@@ -1,4 +1,4 @@
+-using System;
++﻿using System;
+ using System.Collections.Generic;
+ using System.Linq;
+ using System.Threading;
+@@ -10,6 +10,188 @@ namespace DS4Windows.Tests;
+ 
+ public partial class Switch2ProUsbRuntimeOwnerTests
+ {
++    [TestMethod]
++    public void OwnedRemovalRetriesOnlyTheDrainedPublicationTailWithinItsDeadline()
++    {
++        OwnedParticipantContext context = CreateOwnedParticipantContext();
++        CreateOwnedCore(context, out var core, out var table);
++        Assert.IsTrue(core.TryAttach(context.Participant.Registration,
++            () => context.Participant, IgnoreOwnedMapping, 2_000,
++            out var token, out _));
++        var owner = context.Participant.RuntimeOwner;
++        var flags = System.Reflection.BindingFlags.Instance |
++            System.Reflection.BindingFlags.NonPublic;
++        var gateField = typeof(Switch2ProUsbRuntimeOwner).GetField("gate", flags);
++        var publicationField = typeof(Switch2ProUsbRuntimeOwner).GetField(
++            "inputPublicationInProgress", flags);
++        object ownerGate = gateField.GetValue(owner);
++        // Reproduce the exact window after the common report gate drains but
++        // before the USB owner's publication finally block clears its flag.
++        lock (ownerGate) publicationField.SetValue(owner, true);
++        var removal = Task.Run(() => core.TryRemove(token, 2_000, out _));
++        try
++        {
++            Assert.IsTrue(SpinWait.SpinUntil(() => owner.LastStopFailure.Kind ==
++                Switch2ProUsbRuntimeStopFailureKind.OperationAlreadyInProgress,
++                1_000), "The controlled publication tail was not encountered.");
++        }
++        finally
++        {
++            lock (ownerGate)
++            {
++                publicationField.SetValue(owner, false);
++                Monitor.PulseAll(ownerGate);
++            }
++        }
++        Assert.IsTrue(removal.Wait(3_000));
++        Assert.IsTrue(removal.Result,
++            "A drained publication tail must not permanently quarantine the slot.");
++        Assert.AreEqual(InputControllerSlotState.Removed,
++            table.GetSnapshot()[token.Slot].State);
++        Assert.AreEqual(1, context.Lease.CompositeDisposeCount);
++    }
++
++    [TestMethod]
++    public void OwnedRemovalDoesNotExtendDeadlineForAStuckPublicationTail()
++    {
++        OwnedParticipantContext context = CreateOwnedParticipantContext();
++        CreateOwnedCore(context, out var core, out var table);
++        Assert.IsTrue(core.TryAttach(context.Participant.Registration,
++            () => context.Participant, IgnoreOwnedMapping, 2_000,
++            out var token, out _));
++        var owner = context.Participant.RuntimeOwner;
++        var flags = System.Reflection.BindingFlags.Instance |
++            System.Reflection.BindingFlags.NonPublic;
++        object ownerGate = typeof(Switch2ProUsbRuntimeOwner).
++            GetField("gate", flags).GetValue(owner);
++        var publicationField = typeof(Switch2ProUsbRuntimeOwner).GetField(
++            "inputPublicationInProgress", flags);
++        lock (ownerGate) publicationField.SetValue(owner, true);
++        var elapsed = System.Diagnostics.Stopwatch.StartNew();
++        bool removed;
++        try { removed = core.TryRemove(token, 100, out _); }
++        finally
++        {
++            lock (ownerGate)
++            {
++                publicationField.SetValue(owner, false);
++                Monitor.PulseAll(ownerGate);
++            }
++        }
++        Assert.IsFalse(removed);
++        Assert.IsTrue(elapsed.ElapsedMilliseconds < 1_000,
++            "The publication retry extended the original retirement deadline.");
++        Assert.AreEqual(0, context.Lease.CompositeDisposeCount,
++            "A live input publisher must not lose its native handles.");
++        Assert.AreNotEqual(InputControllerSlotState.Removed,
++            table.GetSnapshot()[token.Slot].State);
++    }
++
++    [TestMethod]
++    public async Task UsbControlPlaneRemovalWaitsForAnOrdinaryCallbackWithoutChangingFastRejection()
++    {
++        var context = CreateOwnedParticipantContext();
++        var table = new InputControllerRegistrationTable(1);
++        var service = new Switch2RuntimeRegistrationService(table, 2_000,
++            _ => context.Participant, _ => throw new InvalidOperationException(),
++            _ => throw new InvalidOperationException());
++        Assert.IsTrue(service.TryOpen(81, out _));
++        using var entered = new ManualResetEventSlim(false);
++        using var release = new ManualResetEventSlim(false);
++        Assert.IsTrue(service.TryAttach(context.Participant.RuntimeOwner,
++            (slot, sender, report) =>
++            {
++                if (report.Kind != Switch2RuntimeReportKind.Regular) return;
++                entered.Set();
++                Assert.IsTrue(release.Wait(3_000));
++            }, 2_000, out var token, out _));
++        var frame = CreateProFrame(DeviceGeneration, TransportGeneration);
++        var publish = Task.Run(() => context.Participant.RuntimeOwner.TryPublish(frame));
++        Assert.IsTrue(entered.Wait(2_000));
++        Task<(bool Removed, Switch2RuntimeRegistrationTransactionFailure Failure)> removal = null;
++        try
++        {
++            Assert.IsFalse(service.TryRemove(token, 100, out var fastFailure));
++            Assert.AreEqual(Switch2RuntimeRegistrationTransactionFailureKind.CallbackActive,
++                fastFailure.Kind);
++            removal = service.TryRemoveAfterCallbacksAsync(token, 2_000);
++            Assert.IsFalse(removal.IsCompleted,
++                "The control-plane stop gave up on a live but ordinary callback.");
++        }
++        finally { release.Set(); }
++        Assert.IsTrue(await publish);
++        var result = await removal;
++        Assert.IsTrue(result.Removed, result.Failure.Kind.ToString());
++        Assert.AreEqual(InputControllerSlotState.Removed,
++            table.GetSnapshot()[token.Slot].State);
++    }
++
++    [TestMethod]
++    public async Task UsbControlPlaneCallbackRetryHonorsDeadlineAndLeavesTheOwnerIntact()
++    {
++        var context = CreateOwnedParticipantContext();
++        var table = new InputControllerRegistrationTable(1);
++        var service = new Switch2RuntimeRegistrationService(table, 2_000,
++            _ => context.Participant, _ => throw new InvalidOperationException(),
++            _ => throw new InvalidOperationException());
++        Assert.IsTrue(service.TryOpen(81, out _));
++        using var entered = new ManualResetEventSlim(false);
++        using var release = new ManualResetEventSlim(false);
++        Assert.IsTrue(service.TryAttach(context.Participant.RuntimeOwner,
++            (slot, sender, report) =>
++            {
++                if (report.Kind != Switch2RuntimeReportKind.Regular) return;
++                entered.Set();
++                Assert.IsTrue(release.Wait(3_000));
++            }, 2_000, out var token, out _));
++        var frame = CreateProFrame(DeviceGeneration, TransportGeneration);
++        var publish = Task.Run(() => context.Participant.RuntimeOwner.TryPublish(frame));
++        Assert.IsTrue(entered.Wait(2_000));
++        try
++        {
++            var elapsed = System.Diagnostics.Stopwatch.StartNew();
++            var result = await service.TryRemoveAfterCallbacksAsync(token, 50);
++            Assert.IsFalse(result.Removed);
++            Assert.AreEqual(Switch2RuntimeRegistrationTransactionFailureKind.CallbackActive,
++                result.Failure.Kind);
++            Assert.IsTrue(elapsed.ElapsedMilliseconds < 1_000);
++            Assert.AreEqual(InputControllerSlotState.Attached,
++                table.GetSnapshot()[token.Slot].State);
++            Assert.AreEqual(0, context.Lease.CompositeDisposeCount);
++        }
++        finally { release.Set(); }
++        Assert.IsTrue(await publish);
++        Assert.IsTrue((await service.TryRemoveAfterCallbacksAsync(token, 2_000)).Removed);
++    }
++
++    [TestMethod]
++    public async Task UsbControlPlaneRemovalStillRejectsSameCallbackReentrancyImmediately()
++    {
++        var context = CreateOwnedParticipantContext();
++        var service = new Switch2RuntimeRegistrationService(
++            new InputControllerRegistrationTable(1), 2_000,
++            _ => context.Participant, _ => throw new InvalidOperationException(),
++            _ => throw new InvalidOperationException());
++        Assert.IsTrue(service.TryOpen(81, out _));
++        InputControllerSlotToken token = default;
++        bool checkedReentrancy = false;
++        Assert.IsTrue(service.TryAttach(context.Participant.RuntimeOwner,
++            (slot, sender, report) =>
++            {
++                if (report.Kind != Switch2RuntimeReportKind.Regular) return;
++                var removal = service.TryRemoveAfterCallbacksAsync(token, 2_000);
++                Assert.IsTrue(removal.IsCompleted);
++                Assert.IsFalse(removal.Result.Removed);
++                Assert.AreEqual(Switch2RuntimeRegistrationTransactionFailureKind.ReentrantRemoval,
++                    removal.Result.Failure.Kind);
++                checkedReentrancy = true;
++            }, 2_000, out token, out _));
++        Assert.IsTrue(context.Participant.RuntimeOwner.TryPublish(
++            CreateProFrame(DeviceGeneration, TransportGeneration)));
++        Assert.IsTrue(checkedReentrancy);
++        Assert.IsTrue((await service.TryRemoveAfterCallbacksAsync(token, 2_000)).Removed);
++    }
++
+     [TestMethod]
+     public void ExactDisconnectedFeedbackStillPublishesVirtualNeutralBeforeSlotRemoval()
+     {

@@ -7,9 +7,9 @@ namespace ControllerFusion.Engine;
 // positions: Nintendo B(south) becomes Xbox A / PS Cross.
 public static class PadPackets
 {
-    public static DS4State Map(DS4State raw, Preferences p)
+    public static DS4State Map(DS4State raw, Preferences p, DS4State? destination=null)
     {
-        var s = new DS4State(); raw.CopyTo(s);
+        var s = destination ?? new DS4State(); raw.CopyTo(s);
         s.Motion=MotionPipeline.Map(raw.Motion,p);
         if (raw.BLP) Apply(s, p.GL);
         if (raw.BRP) Apply(s, p.GR);
@@ -38,9 +38,15 @@ public static class PadPackets
             }
         }
     }
+    public static int PacketLength(string mode)=>mode=="Xbox"?20:mode=="PS5"?33:28;
     public static byte[] Encode(DS4State s, string mode)
     {
-        byte[] b = new byte[mode == "Xbox" ? 20 : mode == "PS5" ? 33 : 28];
+        var packet=new byte[PacketLength(mode)];EncodeInto(s,mode,packet);return packet;
+    }
+    public static void EncodeInto(DS4State s,string mode,Span<byte> b)
+    {
+        if(b.Length!=PacketLength(mode))throw new ArgumentException("Invalid output packet length.",nameof(b));
+        b.Clear();
         uint buttons = 0;
         void Bit(bool on, uint mask) { if (on) buttons |= mask; }
         if (mode == "Xbox")
@@ -91,13 +97,12 @@ public static class PadPackets
             } else I16(b,16,4096);
             U32(b,24,unchecked((uint)s.totalMicroSec));
         }
-        return b;
     }
     static int Axis(byte a) => a>=128 ? (a-128)*32767/127 : (a-128)*256;
     static int Signed12(int a)=>Math.Clamp(a>=0?2048+a*2047/32767:2048+a*2048/32768,0,4095);
     static int Axis12(byte a) => a>=128 ? 2048+(a-128)*2047/127 : a*16;
     static int Axis12Y(byte a) => a==128 ? 2048 : a<128 ? 2048+(128-a)*2047/128 : (255-a)*2048/127;
-    static void U16(byte[] b,int o,int v)=>BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(o), (ushort)v);
-    static void I16(byte[] b,int o,int v)=>BinaryPrimitives.WriteInt16LittleEndian(b.AsSpan(o),(short)Math.Clamp(v,-32768,32767));
-    static void U32(byte[] b,int o,uint v)=>BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(o),v);
+    static void U16(Span<byte> b,int o,int v)=>BinaryPrimitives.WriteUInt16LittleEndian(b[o..], (ushort)v);
+    static void I16(Span<byte> b,int o,int v)=>BinaryPrimitives.WriteInt16LittleEndian(b[o..],(short)Math.Clamp(v,-32768,32767));
+    static void U32(Span<byte> b,int o,uint v)=>BinaryPrimitives.WriteUInt32LittleEndian(b[o..],v);
 }

@@ -4,14 +4,17 @@ $taskRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $taskRoot
 try {
     & ./scripts/bootstrap.ps1 -VerifyOnly
+    $taskDotnet = & ./scripts/resolve-dotnet.ps1
+    $taskProductVersion = ([xml](Get-Content -LiteralPath 'src/ControllerFusion.App/ControllerFusion.App.csproj' -Raw)).Project.PropertyGroup.Version | Select-Object -First 1
+    if ($taskProductVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid application version.' }
     $taskLock = Get-Content -LiteralPath DEPENDENCIES.lock.json -Raw | ConvertFrom-Json
     $taskVersion = $taskLock.portableRuntime.version
     if (-not $taskVersion) { throw 'Missing portable runtime lock.' }
     $taskWork = Join-Path $taskRoot 'artifacts/portable-build'
-    $taskPayload = Join-Path $taskWork 'payload'
+    $taskPayload = Join-Path $taskWork ('payload-' + $taskProductVersion + '-net' + $taskVersion)
     New-Item -ItemType Directory -Path $taskWork -Force | Out-Null
     if (-not $SkipPublish) {
-        & dotnet publish src/ControllerFusion.App/ControllerFusion.App.csproj -c Release -p:Platform=x64 -r win-x64 --self-contained true "-p:ControllerHubPortableRuntimeVersion=$taskVersion" -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o $taskPayload --verbosity minimal
+        & $taskDotnet publish src/ControllerFusion.App/ControllerFusion.App.csproj -c Release -p:Platform=x64 -r win-x64 --self-contained true "-p:ControllerHubPortableRuntimeVersion=$taskVersion" -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o $taskPayload --verbosity minimal
         if ($LASTEXITCODE -ne 0) { throw 'Self-contained publish failed.' }
     }
     $taskRuntime = Get-Content -LiteralPath (Join-Path $taskPayload 'ControllerHub.runtimeconfig.json') -Raw | ConvertFrom-Json
@@ -27,7 +30,7 @@ try {
     }
     Copy-Item -LiteralPath README.md,COPYING,THIRD_PARTY_NOTICES.md,DEPENDENCIES.lock.json -Destination $taskPayload -Force
     foreach ($taskDirectory in @('docs','licenses')) { Copy-Item -LiteralPath $taskDirectory -Destination $taskPayload -Recurse -Force }
-    $taskNuget = (& dotnet nuget locals global-packages --list) -replace '^global-packages:\s*',''
+    $taskNuget = (& $taskDotnet nuget locals global-packages --list) -replace '^global-packages:\s*',''
     foreach ($taskPack in @('microsoft.netcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64')) {
         $taskPackRoot = Join-Path $taskNuget ($taskPack + '/' + $taskVersion)
         $taskNotices = @(Get-ChildItem -LiteralPath $taskPackRoot -File | Where-Object { $_.Name -match '^(LICENSE(\.TXT)?|THIRD-PARTY-NOTICES\.TXT)$' })
@@ -55,13 +58,13 @@ try {
     $taskFrameworkRoot = Split-Path -Parent $taskCompiler
     $taskRelease = Join-Path $taskRoot 'releases/latest'
     New-Item -ItemType Directory -Path $taskRelease -Force | Out-Null
-    $taskExe = Join-Path $taskRelease 'ControllerHub-v0.3.0-preview-portable-win-x64.exe'
+    $taskExe = Join-Path $taskRelease "ControllerHub-v$taskProductVersion-preview-portable-win-x64.exe"
     $taskSources = @('src/ControllerHub.Portable/Launcher.cs','src/ControllerHub.Portable/PortableFiles.cs') | ForEach-Object { (Resolve-Path -LiteralPath $_).Path }
     $taskArguments = @('/nologo','/target:winexe','/platform:x64','/optimize+','/debug-','/langversion:5','/codepage:65001',"/out:$taskExe",'/win32icon:src/ControllerFusion.App/app.ico',"/resource:$taskZip,ControllerHub.Payload.zip","/resource:$taskManifest,ControllerHub.Payload.manifest",'/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll',('/reference:' + (Join-Path $taskFrameworkRoot 'System.IO.Compression.dll')))
     & $taskCompiler @taskArguments @taskSources
     if ($LASTEXITCODE -ne 0) { throw 'Portable launcher compilation failed.' }
     $taskHash = (Get-FileHash -LiteralPath $taskExe -Algorithm SHA256).Hash.ToLowerInvariant()
     [IO.File]::WriteAllText($taskExe + '.sha256',$taskHash + '  ' + [IO.Path]::GetFileName($taskExe) + "`n",[Text.Encoding]::ASCII)
-    [pscustomobject]@{PayloadHash=$taskId;RuntimeVersion=$taskVersion;Files=$taskLines.Count-2;Executable=$taskExe;Sha256=$taskHash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskWork 'build-info.json') -Encoding utf8
+    [pscustomobject]@{PayloadHash=$taskId;PayloadDirectory=$taskPayload;RuntimeVersion=$taskVersion;Files=$taskLines.Count-2;Executable=$taskExe;Sha256=$taskHash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskWork 'build-info.json') -Encoding utf8
     Write-Host "Portable EXE: $taskExe"
 } finally { Pop-Location }

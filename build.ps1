@@ -3,9 +3,12 @@ $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     & ./scripts/bootstrap.ps1 -VerifyOnly
+    $taskDotnet = & ./scripts/resolve-dotnet.ps1
+    $taskProductVersion = ([xml](Get-Content -LiteralPath 'src/ControllerFusion.App/ControllerFusion.App.csproj' -Raw)).Project.PropertyGroup.Version | Select-Object -First 1
+    if ($taskProductVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid application version.' }
     $taskPublishArgs = @('publish','src/ControllerFusion.App/ControllerFusion.App.csproj','-c','Release','-p:Platform=x64','--self-contained','false','-o','dist','--nologo','-v:minimal')
     if ($BuildRoot) { $taskPublishArgs += "-p:BaseOutputPath=$BuildRoot" }
-    dotnet @taskPublishArgs
+    & $taskDotnet @taskPublishArgs
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
     # Remove only generated artifacts from older publishes of this project.
     $taskDist = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'dist'))
@@ -21,14 +24,14 @@ try {
         $taskEvidence = Join-Path $PSScriptRoot 'artifacts/latest-validation'
         New-Item -ItemType Directory -Path $taskEvidence -Force | Out-Null
         $taskCheckResult = Join-Path $taskEvidence 'offline-checks.txt'
-        $taskCheckProcess = Start-Process -FilePath (Join-Path $PSScriptRoot 'dist/ControllerHub.exe') -ArgumentList '--self-test',('"' + $taskCheckResult + '"') -WindowStyle Hidden -PassThru -Wait
+        $taskCheckProcess = Start-Process -FilePath $taskDotnet -ArgumentList ('"' + (Join-Path $PSScriptRoot 'dist/ControllerHub.dll') + '"'),'--self-test',('"' + $taskCheckResult + '"') -WindowStyle Hidden -PassThru -Wait
         if ($taskCheckProcess.ExitCode -ne 0) { throw "Self check failed: $taskCheckResult" }
         Get-Content -LiteralPath $taskCheckResult
     }
     if ($Package) {
         $taskRelease = Join-Path $PSScriptRoot 'releases/latest'
         New-Item -ItemType Directory -Path $taskRelease -Force | Out-Null
-        $taskArchive = Join-Path $taskRelease 'ControllerHub-v0.3.0-preview-win-x64.zip'
+        $taskArchive = Join-Path $taskRelease "ControllerHub-v$taskProductVersion-preview-win-x64.zip"
         Compress-Archive -Path (Join-Path $taskDist '*') -DestinationPath $taskArchive -Force
         $taskHash = (Get-FileHash -LiteralPath $taskArchive -Algorithm SHA256).Hash.ToLowerInvariant()
         Set-Content -LiteralPath ($taskArchive + '.sha256') -Value ($taskHash + '  ' + [IO.Path]::GetFileName($taskArchive)) -Encoding ascii

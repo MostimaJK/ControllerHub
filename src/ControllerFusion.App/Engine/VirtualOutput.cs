@@ -3,13 +3,13 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
-using System.Threading.Channels;
 using Y700Switch2V60Viiper;
 
 namespace ControllerFusion.Engine;
 
 public sealed class VirtualOutput : IAsyncDisposable
 {
+    internal Func<string,IEnumerable<string>,CancellationToken,Task<string>> CommandRunner=Processes.Run;
     Process? broker;
     ChildProcessJob? job;
     ViiperProtocolClient? client;
@@ -21,7 +21,10 @@ public sealed class VirtualOutput : IAsyncDisposable
     string? leaseFile;
     CancellationTokenSource? lifetime;
     Task? reader,writer;
-    readonly Channel<byte[]> frames=Channel.CreateBounded<byte[]>(new BoundedChannelOptions(256) { SingleReader=true,SingleWriter=false,FullMode=BoundedChannelFullMode.Wait });
+    readonly RealtimeFrameBuffer frames=new();
+    long maximumWriteTicks,writeTimeouts;
+    internal long WaitingWakeups;
+    public object PipelineStatistics=>new {Buffer=frames.Snapshot(),Written=Interlocked.Read(ref Written),WriteTimeouts=Interlocked.Read(ref writeTimeouts),WaitingWakeups=Interlocked.Read(ref WaitingWakeups),MaximumWriteMilliseconds=Interlocked.Read(ref maximumWriteTicks)*1000d/Stopwatch.Frequency};
     public event Action<byte,byte>? Rumble;
     public int ImportedPort {get;private set;}=-1;
     public Func<byte[],bool>? AdvancedFeedback { get; set; }
@@ -35,7 +38,7 @@ public sealed class VirtualOutput : IAsyncDisposable
     void FailOnce(string message)
     {
         if(Interlocked.Exchange(ref failed,1)!=0)return;
-        Ready=false;frames.Writer.TryComplete();
+        Ready=false;frames.Complete();
         _=Task.Run(()=> {try {Fault?.Invoke(message);}finally {try {lifetime?.Cancel();}catch(ObjectDisposedException){}}});
     }
     public string Mode { get; private set; }="Xbox";
@@ -47,7 +50,7 @@ public sealed class VirtualOutput : IAsyncDisposable
         Mode=mode;
         usbip=Processes.FindUsbip();
         if(attach && usbip==null) throw new IOException("尚未安裝 USB/IP 驅動。請到「診斷與設定」安裝，或指定 usbip.exe。");
-        if(attach) await Processes.Run(usbip!,new[]{"port"},token);
+        if(attach) await CommandRunner(usbip!,new[]{"port"},token);
         if(attach) await OutputLease.Recover(usbip!,s=>Log?.Invoke(s),token);
         if(attach) PriorXbox=XInputEndpoint.Connected();
         int apiPort=FreePort(); do { usbPort=FreePort(); } while(usbPort==apiPort);
@@ -75,9 +78,9 @@ public sealed class VirtualOutput : IAsyncDisposable
         if(attach)
         {
             leaseFile=OutputLease.Record(usbPort,device.BusId,device.DevId);
-            await Processes.Run(usbip!,new[]{"--tcp-port",usbPort.ToString(),"attach","-r","127.0.0.1","-b",$"{device.BusId}-{device.DevId}"},token);
+            await CommandRunner(usbip!,new[]{"--tcp-port",usbPort.ToString(),"attach","-r","127.0.0.1","-b",$"{device.BusId}-{device.DevId}"},token);
             // Confirm the import exists before declaring output ready.
-            var ports=await Processes.Run(usbip!,new[]{"port"},token);
+            var ports=await CommandRunner(usbip!,new[]{"port"},token);
             ImportedPort=FindOwnedPorts(ports).SingleOrDefault(-1);
             if(ImportedPort<0) throw new IOException("USB/IP 回報成功，但沒有找到本次虛擬手柄的連接埠。");
         }
@@ -88,17 +91,40 @@ public sealed class VirtualOutput : IAsyncDisposable
         reader=Task.Run(()=>ReadLoop(ioToken));
         Ready=Volatile.Read(ref failed)==0;
     }
-    public bool Submit(byte[] frame)
+    public bool Submit(ReadOnlySpan<byte> frame,long? receivedTimestamp=null)
     {
         if(!Ready) return false;
-        if(frames.Writer.TryWrite(frame)) return true;
+        if(frames.TryWrite(frame,Mode,receivedTimestamp)) return true;
         // Do not silently drop press/release edges under backpressure.
         FailOnce("虛擬輸出佇列壅塞，已停止本次連接，避免遺失放開按鍵的事件。");
         return false;
     }
-    async Task WriteLoop(CancellationToken token)
+    internal bool TryReadPendingFrame(out byte[] frame) => frames.TryRead(out frame!);
+    Task WriteLoop(CancellationToken token)=>RunWriter((frame,ct)=>stream!.WriteAsync(frame,ct),token);
+    internal async Task RunWriter(Func<byte[],CancellationToken,Task> send,CancellationToken token)
     {
-        try { await foreach(var frame in frames.Reader.ReadAllAsync(token)) { await stream!.WriteAsync(frame,token); Interlocked.Increment(ref Written); } }
+        var frame=new byte[PadPackets.PacketLength(Mode)];
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(token);
+        try
+        {
+            while(!token.IsCancellationRequested && !frames.Completed)
+            {
+                if(frames.TryReadInto(frame,out _) || frames.TrySafetyNeutralInto(frame,out _))
+                {
+                    deadline.CancelAfter(100);
+                    long began=Stopwatch.GetTimestamp();
+                    try {await send(frame,deadline.Token).ConfigureAwait(false);}
+                    catch(OperationCanceledException) when(!token.IsCancellationRequested)
+                    {Interlocked.Increment(ref writeTimeouts);throw new IOException("虛擬輸出寫入逾時，已停止連接以免重播舊按鍵。");}
+                    deadline.CancelAfter(Timeout.Infinite);
+                    if(deadline.IsCancellationRequested && !token.IsCancellationRequested)
+                    {Interlocked.Increment(ref writeTimeouts);throw new IOException("虛擬輸出寫入逾時，已停止連接以免重播舊按鍵。");}
+                    Interlocked.Exchange(ref maximumWriteTicks,Math.Max(Interlocked.Read(ref maximumWriteTicks),Stopwatch.GetTimestamp()-began));
+                    Interlocked.Increment(ref Written);
+                }
+                else {await frames.WaitAsync(token).ConfigureAwait(false);Interlocked.Increment(ref WaitingWakeups);}
+            }
+        }
         catch(OperationCanceledException) when(token.IsCancellationRequested) { }
         catch(Exception e) { FailOnce("虛擬輸出中斷："+e.Message); }
     }
@@ -158,24 +184,50 @@ public sealed class VirtualOutput : IAsyncDisposable
     {
         if(Interlocked.Exchange(ref disposed,1)!=0) return;
         Ready=false;
-        frames.Writer.TryComplete();
+        frames.Complete();
         lifetime?.Cancel();
         foreach(var task in new[]{reader,writer}) if(task!=null) { try { await task; } catch { } }
-        if(stream!=null) { try { using var neutral=new CancellationTokenSource(500); await stream.WriteAsync(PadPackets.Encode(new DS4Windows.DS4State(),Mode),neutral.Token); } catch { } await stream.DisposeAsync(); }
-        if(usbip!=null && device!=null)
+        var failures=new List<Exception>();
+        if(stream!=null) { try { using var neutral=new CancellationTokenSource(500); await stream.WriteAsync(PadPackets.Encode(new DS4Windows.DS4State(),Mode),neutral.Token); } catch { } try {await stream.DisposeAsync();}catch(Exception ex){failures.Add(ex);} }
+        string? portFailure=null;
+        async Task<bool> DetachAndVerify()
         {
+            if(usbip==null || device==null)return true;
             try
             {
                 using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(6));
-                var ports=await Processes.Run(usbip,new[]{"port"},timeout.Token);
-                foreach(int port in FindOwnedPorts(ports)) await Processes.Run(usbip,new[]{"detach","-p",port.ToString()},timeout.Token);
-                if(!FindOwnedPorts(await Processes.Run(usbip,new[]{"port"},timeout.Token)).Any() && leaseFile!=null) File.Delete(leaseFile);
+                var ports=await CommandRunner(usbip,new[]{"port"},timeout.Token);
+                foreach(int port in FindOwnedPorts(ports))
+                {
+                    try {await CommandRunner(usbip,new[]{"detach","-p",port.ToString()},timeout.Token);}
+                    catch(Exception ex){portFailure=ex.Message;Log?.Invoke("移除本次虛擬連接埠失敗："+ex.Message);}
+                }
+                for(int attempt=0;attempt<3;attempt++)
+                {
+                    if(!FindOwnedPorts(await CommandRunner(usbip,new[]{"port"},timeout.Token)).Any())
+                    {if(leaseFile!=null)File.Delete(leaseFile);return true;}
+                    await Task.Delay(100,timeout.Token);
+                }
+                portFailure??="USB/IP 仍列出本次虛擬連接埠。";
             }
-            catch(Exception e) { Log?.Invoke("移除本次虛擬連接埠失敗："+e.Message); }
+            catch(Exception ex){portFailure=ex.Message;Log?.Invoke("虛擬連接埠驗證失敗："+ex.Message);}
+            return false;
         }
-        if(bus.HasValue && client!=null) { try { using var timeout=new CancellationTokenSource(1500); await client.RemoveBusAsync(bus.Value,timeout.Token); } catch { } }
-        if(broker!=null) { try { if(!broker.HasExited) broker.Kill(true); } catch { } broker.Dispose(); }
-        job?.Dispose();
+        bool released=await DetachAndVerify();
+        if(bus.HasValue && client!=null) {try {using var timeout=new CancellationTokenSource(1500);await client.RemoveBusAsync(bus.Value,timeout.Token);}catch(Exception ex){Log?.Invoke("移除本次虛擬匯流排："+ex.Message);}}
+        if(broker!=null)
+        {
+            try {if(!broker.HasExited){broker.Kill(true);using var timeout=new CancellationTokenSource(1500);await broker.WaitForExitAsync(timeout.Token);}}
+            catch(Exception ex){failures.Add(ex);}
+            finally {broker.Dispose();}
+        }
+        try {job?.Dispose();}catch(Exception ex){failures.Add(ex);}
         lifetime?.Dispose();
+        // A stopped server can allow a previously busy driver import to retire.
+        // Re-check only the endpoint owned by this session, retaining its lease
+        // until absence is proven. Never report a swallowed detach as success.
+        if(!released)released=await DetachAndVerify();
+        if(!released)failures.Add(new IOException("虛擬輸出尚未完成釋放，復原紀錄已保留。"+portFailure));
+        if(failures.Count!=0)throw new AggregateException("虛擬輸出清理未完成。",failures);
     }
 }

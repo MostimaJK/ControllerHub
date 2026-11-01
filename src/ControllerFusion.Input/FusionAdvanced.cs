@@ -13,6 +13,13 @@ using NAudio.Wave.SampleProviders;
 
 namespace ControllerFusion.Input;
 
+// A session stop can retain exact USB I/O. The enclosing physical owner must
+// finish it; only a failed physical stop makes this a final cleanup failure.
+public sealed class DeferredFeedbackRetirementException : InvalidOperationException
+{
+    public DeferredFeedbackRetirementException() : base("原生遊戲回饋通道尚未完成退役，交由實體輸入生命週期繼續清理。") { }
+}
+
 public sealed record FusionAudioSource(string Id,string Name);
 public sealed record FusionHapticsStatistics(long AcceptedPcmWindows,long RejectedPcmWindows,long RejectedNeutralWindows,string LastRejection);
 public sealed partial class FusionInput
@@ -224,7 +231,7 @@ public sealed class FusionFeedback : IDisposable
             var failures=new System.Collections.Generic.List<Exception>();
             void Release(Action action) {try {action();}catch(Exception e){failures.Add(e);}}
             Release(audio.Dispose);
-            Release(()=> {if(nintendo?.TryRetire()==false)throw new InvalidOperationException("原生遊戲回饋通道尚未完成退役，交由實體輸入生命週期繼續清理。");});
+            Release(()=> {if(nintendo?.TryRetire()==false)throw new DeferredFeedbackRetirementException();});
             Release(()=>player?.Stop());
             Release(()=>player?.Dispose());
             Release(()=>endpoint?.Dispose());

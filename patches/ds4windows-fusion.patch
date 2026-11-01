@@ -106,16 +106,35 @@ index 1d5ded3..14be020 100644
                  }
              }
 diff --git a/DS4Windows/DS4Control/ControlService.cs b/DS4Windows/DS4Control/ControlService.cs
-index 32f56da..f8a3570 100644
+index 32f56da..6e42e1e 100644
 --- a/DS4Windows/DS4Control/ControlService.cs
 +++ b/DS4Windows/DS4Control/ControlService.cs
-@@ -1,4 +1,4 @@
--/*
-+﻿/*
- DS4Windows
- Copyright (C) 2023  Travis Nickles
+@@ -908,18 +908,21 @@ namespace DS4Windows
+             }
+         }
  
-@@ -1341,6 +1341,24 @@ namespace DS4Windows
+-        public void StopAndShutDown(bool immediateUnplug)
++        public void StopAndShutDown(bool immediateUnplug) => FusionStopAndShutDown(immediateUnplug);
++
++        internal bool FusionStopAndShutDown(bool immediateUnplug)
+         {
+-            if (ControlServiceMouseCallbackSubscription.IsInsideCallback) return;
++            if (ControlServiceMouseCallbackSubscription.IsInsideCallback) return false;
+             lock (serviceLifecycleLock)
+             {
+                 if (running || exactTypedStopRetryPending)
+                 {
+                     if (!StopCore(showlog: true,
+-                            immediateUnplug: immediateUnplug)) return;
++                            immediateUnplug: immediateUnplug)) return false;
+                 }
+ 
+                 ShutDownCore();
++                return true;
+             }
+         }
+ 
+@@ -1341,6 +1344,24 @@ namespace DS4Windows
          /// Adds the device to HidHide while the DS4Windows service is running.
          /// Stop releases managed entries and Start acquires them again.
          /// </summary>
@@ -140,7 +159,7 @@ index 32f56da..f8a3570 100644
          private bool EnsureHidHideSessionForDevice(DS4Device dev)
          {
              if (PortableLabContext.IsActive) return false;
-@@ -2953,7 +2971,8 @@ namespace DS4Windows
+@@ -2953,7 +2974,8 @@ namespace DS4Windows
                      // USB/IP output imported. Remove those ports before HID
                      // discovery or DS4Windows will ingest its own VIIPER DS4,
                      // create a second output/UAC endpoint, and recurse.
@@ -150,7 +169,7 @@ index 32f56da..f8a3570 100644
                      // Let usbccgp/HID finish publishing removal before the
                      // first input snapshot; otherwise a detached interface can
                      // remain enumerable for one final discovery pass.
-@@ -3013,13 +3032,14 @@ namespace DS4Windows
+@@ -3013,13 +3035,14 @@ namespace DS4Windows
                      LogDebug($"Sunshine controller bridge could not start: {bridgeException.Message}", true);
                  }
                  StartGameBarStateTimer();
@@ -168,7 +187,7 @@ index 32f56da..f8a3570 100644
  
                  if (_udpServer != null)
                  {
-@@ -4716,6 +4736,7 @@ namespace DS4Windows
+@@ -4716,6 +4739,7 @@ namespace DS4Windows
  
          public void TouchPadOn(int ind, DS4Device device)
          {
@@ -176,7 +195,7 @@ index 32f56da..f8a3570 100644
              if (ControlServiceMouseCallbackSubscription.IsInsideCallback)
                  throw new InvalidOperationException("Mouse callback replacement requires a cold lifecycle boundary.");
              lock (serviceLifecycleLock)
-@@ -6088,6 +6109,9 @@ namespace DS4Windows
+@@ -6088,6 +6112,9 @@ namespace DS4Windows
              ReportDiagnosticsWorker.Source diagnosticsSource,
              DS4State projectedState = null, DS4State projectedPreviousState = null)
          {
@@ -413,7 +432,7 @@ index 07df089..af8fa25 100644
      {
          Switch2ProUsbOwnedFeedbackQuiescenceResult quiescence = default;
 diff --git a/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedFeedbackActivationLifetime.cs b/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedFeedbackActivationLifetime.cs
-index 197a3fb..f7c9690 100644
+index 197a3fb..6bffaaa 100644
 --- a/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedFeedbackActivationLifetime.cs
 +++ b/DS4Windows/DS4Control/Switch2/Switch2ProUsbOwnedFeedbackActivationLifetime.cs
 @@ -79,6 +79,8 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
@@ -531,6 +550,35 @@ index 197a3fb..f7c9690 100644
      }
  
      /// <summary>
+@@ -1330,11 +1356,23 @@ internal sealed partial class Switch2ProUsbOwnedFeedbackActivationLifetime :
+                 !Monitor.TryEnter(rumbleTransactionGate, transactionWait)) return false;
+             try
+             {
+-                int operationWait = RemainingMilliseconds(deadline, remaining);
+-                if (operationWait == 0) return false;
+-                result = TryNeutralizeAndQuiesceCore(exactAuthority,
+-                    operationWait, deadline);
+-                return true;
++                while (true)
++                {
++                    int operationWait = RemainingMilliseconds(deadline, remaining);
++                    if (operationWait == 0) return false;
++                    result = TryNeutralizeAndQuiesceCore(exactAuthority,
++                        operationWait, deadline);
++                    // A retained native Stop is a retryable receipt, not a
++                    // failed release. Drain that exact claim and replay the
++                    // same pending Stop inside the original teardown budget.
++                    // Never retry uncertain/quarantined owners or mint a new
++                    // terminal epoch; the pump preserves its pending bytes.
++                    if (result.Outcome != Switch2ProUsbOwnedFeedbackQuiescenceOutcome.ProvenIncomplete ||
++                        bridge.State != Switch2ProUsbOwnedHdRumbleBridgeState.RetainedOperation ||
++                        RemainingMilliseconds(deadline, remaining) < bridge.OperationWaitMilliseconds)
++                        return true;
++                    Thread.Sleep(Math.Min(5, RemainingMilliseconds(deadline, remaining)));
++                }
+             }
+             finally { Monitor.Exit(rumbleTransactionGate); }
+         }
 diff --git a/DS4Windows/DS4Control/Switch2/Switch2ProUsbProductionCoordinator.cs b/DS4Windows/DS4Control/Switch2/Switch2ProUsbProductionCoordinator.cs
 index badeadb..dfd09b7 100644
 --- a/DS4Windows/DS4Control/Switch2/Switch2ProUsbProductionCoordinator.cs
@@ -638,6 +686,25 @@ index c097e95..75c07dc 100644
          }
      }
  
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2RuntimeInputDevice.cs b/DS4Windows/DS4Control/Switch2/Switch2RuntimeInputDevice.cs
+index 5608ee6..9c57b04 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2RuntimeInputDevice.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2RuntimeInputDevice.cs
+@@ -132,6 +132,14 @@ public sealed partial class Switch2RuntimeInputDevice : DS4Device
+     private bool hasObservedPhysicalInput;
+     private long inputObservationTimestampQpc;
+     private long inputObservationQpcFrequency;
++    // Fusion retains the Windows notification/read completion time through its
++    // output queue, so draining old Bluetooth notifications cannot freshen them.
++    internal long FusionInputTimestampQpc
++    {
++        get {lock(publicationGate) return hasObservedPhysicalInput &&
++            inputObservationQpcFrequency==System.Diagnostics.Stopwatch.Frequency ?
++            inputObservationTimestampQpc : 0;}
++    }
+     private int inputObservationCount;
+     private int inputObservationNext;
+     private double inputObservationSumMilliseconds;
 diff --git a/DS4Windows/DS4Control/Switch2/Switch2RuntimeRegistrationService.cs b/DS4Windows/DS4Control/Switch2/Switch2RuntimeRegistrationService.cs
 index f72b375..750599b 100644
 --- a/DS4Windows/DS4Control/Switch2/Switch2RuntimeRegistrationService.cs
@@ -681,16 +748,38 @@ index f72b375..750599b 100644
      internal bool TryRemove(in InputControllerSlotToken token,
          int timeoutMilliseconds,
          out Switch2RuntimeRegistrationTransactionFailure failure) =>
+diff --git a/DS4Windows/DS4Forms/ProfileEditor.xaml.cs b/DS4Windows/DS4Forms/ProfileEditor.xaml.cs
+index e90c494..4755b18 100644
+--- a/DS4Windows/DS4Forms/ProfileEditor.xaml.cs
++++ b/DS4Windows/DS4Forms/ProfileEditor.xaml.cs
+@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Collections.Generic;
+ using System.IO;
+ using System.Linq;
+@@ -21,6 +21,8 @@ using System.ComponentModel;
+ using System.Windows.Forms;
+ using Application = System.Windows.Application;
+ using Button = System.Windows.Controls.Button;
++using ContextMenu = System.Windows.Controls.ContextMenu;
++using MenuItem = System.Windows.Controls.MenuItem;
+ using MessageBox = System.Windows.MessageBox;
+ using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+ using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 diff --git a/DS4Windows/DS4WinWPF.csproj b/DS4Windows/DS4WinWPF.csproj
-index f7db86b..076e6d6 100644
+index f7db86b..3f309c3 100644
 --- a/DS4Windows/DS4WinWPF.csproj
 +++ b/DS4Windows/DS4WinWPF.csproj
-@@ -1,4 +1,4 @@
--<Project Sdk="Microsoft.NET.Sdk">
-+﻿<Project Sdk="Microsoft.NET.Sdk">
+@@ -2,7 +2,7 @@
  
  	<PropertyGroup>
  		<OutputType>WinExe</OutputType>
+-		<TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
++		<TargetFramework>$(ControllerHubTargetFramework)</TargetFramework>
+ 		<UseWPF>true</UseWPF>
+ 		<Platforms>x64;x86</Platforms>
+ 		<RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
 @@ -69,6 +69,11 @@
  	</PropertyGroup>
  
@@ -703,6 +792,19 @@ index f7db86b..076e6d6 100644
  		<Compile Include="..\installer\StartupSetupState.cs" Link="StartupSetupState.cs" />
  		<None Remove="libs\x64\**" Condition="'$(Platform)' != 'x64'" />
  		<None Remove="libs\x86\**" Condition="'$(Platform)' != 'x86'" />
+diff --git a/DS4WindowsTests/DS4WindowsTests.csproj b/DS4WindowsTests/DS4WindowsTests.csproj
+index 468945b..2f569a2 100644
+--- a/DS4WindowsTests/DS4WindowsTests.csproj
++++ b/DS4WindowsTests/DS4WindowsTests.csproj
+@@ -1,7 +1,7 @@
+ <Project Sdk="Microsoft.NET.Sdk">
+ 
+   <PropertyGroup>
+-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
++    <TargetFramework>$(ControllerHubTargetFramework)</TargetFramework>
+     <ImplicitUsings>enable</ImplicitUsings>
+     <Nullable>disable</Nullable>
+ 
 diff --git a/DS4WindowsTests/FusionAudioFormatTests.cs b/DS4WindowsTests/FusionAudioFormatTests.cs
 new file mode 100644
 index 0000000..f3fc528
@@ -845,6 +947,32 @@ index 0000000..59dc814
 +            }
 +            if(!active){operation.DisposeOwnerQuiesced();bound.Dispose();}
 +        }
++    }
++}
+diff --git a/DS4WindowsTests/FusionShutdownOutcomeTests.cs b/DS4WindowsTests/FusionShutdownOutcomeTests.cs
+new file mode 100644
+index 0000000..68fe241
+--- /dev/null
++++ b/DS4WindowsTests/FusionShutdownOutcomeTests.cs
+@@ -0,0 +1,20 @@
++using ControllerFusion.Input;
++using Microsoft.VisualStudio.TestTools.UnitTesting;
++namespace DS4WindowsTests;
++[TestClass,DoNotParallelize]
++public class FusionShutdownOutcomeTests
++{
++    [TestMethod]
++    public void FailedShutdownRetainsFacadeOwnershipUntilConfirmedCompletion()
++    {
++        bool allow=false;var previous=FusionInput.Current;
++        var input=new FusionInput(()=>allow);FusionInput.Current=input;
++        try
++        {
++            Assert.ThrowsException<System.IO.IOException>(input.Dispose);
++            Assert.AreSame(input,FusionInput.Current);
++            allow=true;input.Dispose();Assert.IsNull(FusionInput.Current);
++        }
++        finally {allow=true;input.Dispose();FusionInput.Current=previous;}
 +    }
 +}
 diff --git a/DS4WindowsTests/Switch2AudioHapticsUsbTests.cs b/DS4WindowsTests/Switch2AudioHapticsUsbTests.cs
@@ -1213,3 +1341,80 @@ index b9160ec..6c206ec 100644
      [TestMethod]
      public void ExactDisconnectedFeedbackStillPublishesVirtualNeutralBeforeSlotRemoval()
      {
+diff --git a/DS4WindowsTests/Switch2ProUsbOwnedFeedbackActivationLifetimeTests.cs b/DS4WindowsTests/Switch2ProUsbOwnedFeedbackActivationLifetimeTests.cs
+index ae0c14b..71a500c 100644
+--- a/DS4WindowsTests/Switch2ProUsbOwnedFeedbackActivationLifetimeTests.cs
++++ b/DS4WindowsTests/Switch2ProUsbOwnedFeedbackActivationLifetimeTests.cs
+@@ -1294,6 +1294,50 @@ public sealed class Switch2ProUsbOwnedFeedbackActivationLifetimeTests
+         Assert.AreEqual(2, composition.Lease.RetirementCount);
+     }
+ 
++    [TestMethod]
++    public void ColdTeardownCompletesRetainedTerminalStopWithinOriginalDeadline()
++    {
++        var composition = CreateCommitted(ContainerA);
++        composition.Lease.WriteModes.Enqueue(OutputWriteMode.Retained);
++        composition.Lease.WriteModes.Enqueue(OutputWriteMode.Complete);
++        composition.Lease.RetirementModes.Enqueue(OutputRetirementMode.Retained);
++        composition.Lease.RetirementModes.Enqueue(OutputRetirementMode.Quiescent);
++        long deadline = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency;
++        var result = composition.Feedback.TryNeutralizeAndQuiesceUntil(composition.Authority, deadline);
++        Assert.AreEqual(Switch2ProUsbOwnedFeedbackQuiescenceOutcome.ExactNeutralAndQuiescent,
++            result.Outcome, "Disconnect/mode switch must drain a retryable terminal write before reporting release failure.");
++        Assert.AreEqual(2, composition.Lease.WriteCount);
++        CollectionAssert.AreEqual(composition.Lease.Reports[0], composition.Lease.Reports[1]);
++        Assert.IsTrue(composition.Feedback.AuthenticatesQuiescenceResult(composition.Authority, result));
++    }
++
++    [TestMethod]
++    public void ColdTeardownDoesNotRetryQuarantinedNativeOutput()
++    {
++        var composition = CreateCommitted(ContainerA);
++        composition.Lease.WriteModes.Enqueue(OutputWriteMode.Retained);
++        composition.Lease.RetirementModes.Enqueue(OutputRetirementMode.Throw);
++        long deadline = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency;
++        var result = composition.Feedback.TryNeutralizeAndQuiesceUntil(composition.Authority, deadline);
++        Assert.AreEqual(Switch2ProUsbOwnedFeedbackQuiescenceOutcome.OutcomeUncertain, result.Outcome);
++        Assert.AreEqual(1, composition.Lease.WriteCount);
++        Assert.AreEqual(1, composition.Lease.RetirementCount);
++    }
++
++    [TestMethod]
++    public void ColdTeardownHonorsDeadlineWhenNativeStopStaysRetained()
++    {
++        var composition = CreateCommitted(ContainerA, operationWaitMilliseconds: 20);
++        composition.Lease.WriteModes.Enqueue(OutputWriteMode.Retained);
++        for (int i = 0; i < 100; i++) composition.Lease.RetirementModes.Enqueue(OutputRetirementMode.Retained);
++        var watch = System.Diagnostics.Stopwatch.StartNew();
++        long deadline = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency / 10;
++        var result = composition.Feedback.TryNeutralizeAndQuiesceUntil(composition.Authority, deadline);
++        Assert.AreEqual(Switch2ProUsbOwnedFeedbackQuiescenceOutcome.ProvenIncomplete, result.Outcome);
++        Assert.IsTrue(watch.ElapsedMilliseconds < 500, "Retries must not renew the original deadline.");
++        Assert.AreEqual(1, composition.Lease.WriteCount, "Pending native I/O must not be replaced by another write.");
++    }
++
+     [TestMethod]
+     public void RetainedTerminalStopDrainsThenRetriesIdenticalBytesAndCounter()
+     {
+diff --git a/DS4WindowsTests/Switch2RuntimeInputDeviceTests.cs b/DS4WindowsTests/Switch2RuntimeInputDeviceTests.cs
+index c9190d9..29b9f73 100644
+--- a/DS4WindowsTests/Switch2RuntimeInputDeviceTests.cs
++++ b/DS4WindowsTests/Switch2RuntimeInputDeviceTests.cs
+@@ -10,6 +10,17 @@ namespace DS4WindowsTests;
+ [TestClass]
+ public class Switch2RuntimeInputDeviceTests
+ {
++    [TestMethod]
++    public void FusionRetainsPhysicalCompletionTimeThroughDelayedPublication()
++    {
++        var device=CreateProDevice(91_001,91_002);device.StartUpdate();
++        long seen=-1;device.Report+=(_,_)=>seen=device.FusionInputTimestampQpc;
++        Assert.IsTrue(device.TryPublishPro(CreateProFrame(91_001,91_002,0,timestamp:100)));
++        Assert.AreEqual(100L,seen,"Publication must expose original QPC receipt, not the drain worker time.");
++        Assert.IsTrue(device.TryPublishPro(CreateProFrame(91_001,91_002,0,counter:2,timestamp:200)));
++        Assert.AreEqual(200L,seen);
++    }
++
+     private const Switch2GattProperty InputProperties =
+         Switch2GattProperty.Read | Switch2GattProperty.Notify;
+ 

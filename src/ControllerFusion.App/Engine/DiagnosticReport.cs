@@ -31,9 +31,10 @@ public static class DiagnosticReport
             engine.FeedbackReports,
             engine.ActiveTransport,
             engine.InputStatistics,
+            engine.OutputStatistics,
             Haptics = Redact(engine.HapticsStatus),
             Hiding = Redact(engine.HidingStatus),
-            Buttons = s == null ? null : new { s.PS, Create = s.Share, s.Cross, s.Circle, s.Square, s.Triangle, GL = s.BLP, GR = s.BRP, C = s.Switch2RawInputStatus.CButton },
+            Buttons = s == null ? null : new { s.PS, Create = s.Share, s.Cross, s.Circle, s.Square, s.Triangle, ZL = s.L2, ZR = s.R2, GL = s.BLP, GR = s.BRP, C = s.Switch2RawInputStatus.CButton },
             Logs = logs.TakeLast(80).Select(Redact).ToArray(),
             Note = "This is a diagnostic snapshot. No hardware fault or game compatibility verdict is inferred."
         }, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All) });

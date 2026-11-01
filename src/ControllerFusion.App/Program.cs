@@ -60,6 +60,13 @@ public static class Program
             catch(Exception ex) { File.AppendAllText(path,Environment.NewLine+ex); Environment.ExitCode=1; }
             return;
         }
+        if(args.Contains("--performance-check"))
+        {
+            var path=args.SkipWhile(a=>a!="--performance-check").Skip(1).First();
+            try {PerformanceChecks.Run(path).GetAwaiter().GetResult();}
+            catch(Exception ex){File.WriteAllText(path,ex.ToString());Environment.ExitCode=1;}
+            return;
+        }
         if(args.Contains("--self-test"))
         {
             var path=args.SkipWhile(a=>a!="--self-test").Skip(1).FirstOrDefault()??"self-test.txt";
@@ -95,6 +102,18 @@ public static class Program
             try { UiText.Use(ProfileStore.LoadPreferences(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"ControllerFusion","preferences.json"),out _).Language); } catch { }
             MessageBox.Show(UiText.Get("ControllerHub 已在執行，請切換至原視窗。"),"ControllerHub"); return;
         }
+        if(args.Contains("--test-release-lifecycle"))
+        {
+            var path=args.SkipWhile(a=>a!="--test-release-lifecycle").Skip(1).First();
+            app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
+            _=Task.Run(async ()=>
+            {
+                try {await LifecycleChecks.Run(path,args.Contains("--dualsense")?"PS5 DualSense":"Switch 2 Pro",args.Contains("--bluetooth")?"藍牙":"USB 有線",args.Contains("--with-haptics"));}
+                catch(Exception ex) {File.AppendAllText(path,Environment.NewLine+ex);Environment.ExitCode=1;}
+                finally {_ = app.Dispatcher.BeginInvoke(new Action(app.Shutdown));}
+            });
+            app.Run();return;
+        }
         app.Run(new MainWindow(args));
     }
 }
@@ -115,13 +134,14 @@ public sealed class MainWindow : Window
     readonly ProfileStore profileStore;
     readonly List<SavedProfile> savedProfiles;
     readonly DispatcherTimer metrics = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    readonly DispatcherTimer profilePolling = new() { Interval = TimeSpan.FromSeconds(2) };
     TextBlock? frequencyText, inputStateText, motionText, hapticsText;
     BatteryIndicator? batteryIndicator;
     ConnectionBadge? headerBadge, connectionBadge;
     bool closing;
     bool closeReady;
     TrayHost? tray;
-    int gameTicks;
+    bool viewDirty;
     bool inspectingGame;
     string? automaticProfile;
     Preferences? beforeGame;
@@ -155,8 +175,9 @@ public sealed class MainWindow : Window
         profiles.Clear(); profiles.AddRange(savedProfiles.Select(p=>p.Name));
         try {preferences=ProfileStore.LoadPreferences(preferencesPath,out var warning);if(warning!=null)note=warning;}
         catch { preferences=new(); note = "無法讀取配置，已使用預設值；原檔案未覆寫。"; }
-        if(args.Contains("--hardware-live")) { preferences.Controller=args.Contains("--dualsense")?"PS5 DualSense":"Switch 2 Pro"; preferences.Transport=args.Contains("--bluetooth")?"藍牙":"USB 有線"; preferences.Output=args.Contains("--bounded-game-haptics") || args.Contains("--bounded-game-triggers") || args.Contains("--bounded-motion")?"PS5":"Xbox";if(args.Contains("--bounded-motion"))preferences.MotionEnabled=true;if(args.Contains("--bounded-game-triggers"))preferences.AdaptiveTriggers=true; }
+        if(args.Contains("--hardware-live")) { preferences.AudioHaptics=false;preferences.Controller=args.Contains("--dualsense")?"PS5 DualSense":"Switch 2 Pro"; preferences.Transport=args.Contains("--bluetooth")?"藍牙":"USB 有線"; preferences.Output=args.Contains("--bounded-game-haptics") || args.Contains("--bounded-game-triggers") || args.Contains("--bounded-motion")?"PS5":"Xbox";if(args.Contains("--bounded-motion"))preferences.MotionEnabled=true;if(args.Contains("--bounded-game-triggers"))preferences.AdaptiveTriggers=true; }
         if(args.Contains("--bounded-audio") || args.Contains("--bounded-trigger") || args.Contains("--bounded-game-haptics") || args.Contains("--bounded-game-triggers") || args.Contains("--bounded-motion") || args.Contains("--close-after-connect")){preferences.AudioHaptics=false;preferences.AutoReconnect=false;preferences.AutoTransport=false;preferences.AutoProfiles=false;preferences.MinimizeToTray=false;}
+        if(args.Contains("--manual-latency")) {page="手柄";preferences.Output="Xbox";preferences.AudioHaptics=false;preferences.AutoReconnect=false;preferences.AutoTransport=false;preferences.AutoProfiles=false;preferences.MinimizeToTray=false;}
         if(args.Contains("--manual-haptics")) {page="震動";preferences.Output="PS5";preferences.AudioHaptics=false;preferences.AutoReconnect=false;preferences.AutoTransport=false;preferences.AutoProfiles=false;preferences.MinimizeToTray=false;}
         selectedProfile = profiles[0];
         Resources.Add(typeof(Button), ButtonStyle());
@@ -201,7 +222,7 @@ public sealed class MainWindow : Window
             if(closeReady || smoke) return;
             e.Cancel=true;
             if(closing) return;
-            closing=true; IsEnabled=false; CancelConnection(false); metrics.Stop();manualDeadline?.Stop();
+            closing=true; IsEnabled=false; CancelConnection(false); metrics.Stop();profilePolling.Stop();manualDeadline?.Stop();
             try { await engine.DisposeAsync(); } catch(Exception ex) { Log(ex.Message);Environment.ExitCode=2; }
             if(args.Contains("--hardware-live"))
             {
@@ -227,18 +248,19 @@ public sealed class MainWindow : Window
             if(inputStateText!=null) { var s=engine.LastFrame; inputStateText.Text=s==null || !engine.HasInput?UiText.Get("等待實體按鍵輸入"):preferences.Controller == "PS5 DualSense" ? $"L {s.LX},{s.LY} · R {s.RX},{s.RY}   PS {(s.PS?"●":"○")}  Create {(s.Share?"●":"○")}  L2 {s.L2}  R2 {s.R2}" : $"L {s.LX},{s.LY} · R {s.RX},{s.RY}   GL {(s.BLP?"●":"○")}  GR {(s.BRP?"●":"○")}  C {(s.Switch2RawInputStatus.CButton?"●":"○")}"; }
             if(hapticsText!=null) hapticsText.Text=UiText.Get(engine.HapticsStatus);
             if(motionText!=null) { var m=engine.LastFrame?.Motion; motionText.Text=UiText.Get(engine.HasInput && m!=null?$"角速度 °/s   P {m.angVelPitch:F2}   Y {m.angVelYaw:F2}   R {m.angVelRoll:F2}\n加速度 g   X {m.accelXG:F2}   Y {m.accelYG:F2}   Z {m.accelZG:F2}":"等待有效體感資料"); }
-            if(++gameTicks%8==0 && preferences.AutoProfiles && !inspectingGame) _=ObserveGameProfile();
             var liveAt=Array.IndexOf(args,"--hardware-live");
-            if(liveAt>=0 && liveAt+1<args.Length) { try { string[] keys;lock(observedGate)keys=observedKeys.ToArray(); ProfileStore.AtomicWrite(args[liveAt+1],JsonSerializer.Serialize(new{engine.Status,engine.Reports,engine.FeedbackReports,engine.Hertz,engine.HasInput,engine.HasOutput,engine.Battery,engine.Charging,engine.HapticsStatus,engine.HapticsStatistics,engine.NativeHdAvailable,engine.ActiveTransport,engine.InputStatistics,Motion=engine.LastFrame?.Motion is {} motion?new{motion.angVelPitch,motion.angVelYaw,motion.angVelRoll,motion.accelXG,motion.accelYG,motion.accelZG}:null,engine.BluetoothStatus,engine.Candidates,engine.XboxState,Keys=keys})); } catch { } }
+            if(liveAt>=0 && liveAt+1<args.Length) { try { string[] keys;lock(observedGate)keys=observedKeys.ToArray(); ProfileStore.AtomicWrite(args[liveAt+1],JsonSerializer.Serialize(new{engine.Status,engine.Reports,engine.FeedbackReports,engine.Hertz,engine.HasInput,engine.HasOutput,engine.Battery,engine.Charging,engine.HapticsStatus,engine.HapticsStatistics,engine.NativeHdAvailable,engine.ActiveTransport,engine.InputStatistics,engine.OutputStatistics,Motion=engine.LastFrame?.Motion is {} motion?new{motion.angVelPitch,motion.angVelYaw,motion.angVelRoll,motion.accelXG,motion.accelYG,motion.accelZG}:null,engine.BluetoothStatus,engine.Candidates,engine.XboxState,Keys=keys})); } catch { } }
         };
-        if(!smoke) {
-            metrics.Start();
-            StateChanged+=(_,_)=> {
-                if(WindowState!=WindowState.Minimized || !preferences.MinimizeToTray || closing)return;
-                tray??=new TrayHost(()=>Dispatcher.BeginInvoke(new Action(()=>{Show();WindowState=WindowState.Normal;Activate();})),()=>Dispatcher.BeginInvoke(new Action(Close)));
-                Hide();
-            };
-        }
+        profilePolling.Tick+=(_,_)=> {if(preferences.AutoProfiles && !inspectingGame && !closing)_=ObserveGameProfile();};
+        if(!smoke) {metrics.Start();profilePolling.Start();}
+        StateChanged+=(_,_)=> {
+            if(closing)return;
+            if(WindowState==WindowState.Minimized)metrics.Stop();
+            else {if(!smoke)metrics.Start();if(viewDirty)Draw();}
+            if(smoke || WindowState!=WindowState.Minimized || !preferences.MinimizeToTray)return;
+            tray??=new TrayHost(()=>Dispatcher.BeginInvoke(new Action(()=>{Show();WindowState=WindowState.Normal;Activate();})),()=>Dispatcher.BeginInvoke(new Action(Close)));
+            Hide();
+        };
         Log("已載入實體輸入與虛擬輸出模組；按連接後啟動。");
         Draw();
         SizeChanged += (_, e) => { if (e.HeightChanged && (e.PreviousSize.Height <= 760) != (e.NewSize.Height <= 760)) Draw(); };
@@ -384,6 +406,8 @@ public sealed class MainWindow : Window
 
     void Draw()
     {
+        if(IsLoaded && (WindowState==WindowState.Minimized || !IsVisible)){viewDirty=true;return;}
+        viewDirty=false;
         UiText.Use(preferences.Language);
         FontFamily = UiText.Font;
         tray?.ApplyLanguage();
@@ -413,7 +437,7 @@ public sealed class MainWindow : Window
             tab.HorizontalContentAlignment = HorizontalAlignment.Left; tab.Padding = new Thickness(12, 13, 8, 13); tab.Margin = new Thickness(0, 0, 6, 6); nav.Children.Add(tab);
         }
         Grid.SetRow(nav, 1); sidebar.Children.Add(nav);
-        var bottom = Column(Text("個人工作台", 12, true), Text("Windows 11  /  v0.3 進階測試", 11, muted: true)); Grid.SetRow(bottom, 3); sidebar.Children.Add(bottom);
+        var bottom = Column(Text("個人工作台", 12, true), Text("Windows 11  /  v0.3.4", 11, muted: true)); Grid.SetRow(bottom, 3); sidebar.Children.Add(bottom);
         shell.Children.Add(new Border { Background = Brushes.White, BorderBrush = Brush(Line), BorderThickness = new Thickness(0, 0, 1, 0), Child = sidebar });
         var main = new Grid { Margin = new Thickness(28, 25, 28, 18) }; main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); main.RowDefinitions.Add(new RowDefinition()); main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); Grid.SetColumn(main, 1); shell.Children.Add(main);
         var header = new Grid { Margin = new Thickness(0, 0, 0, 24) }; header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -424,7 +448,7 @@ public sealed class MainWindow : Window
         UIElement content = page switch { "震動" => RumblePage(), "背鍵 / C 鍵" => MappingPage(), "遊戲配置" => ProfilesPage(), "診斷與設定" => DiagnosticsPage(), "體感與進階" => AdvancedPage(), _ => HomePage() };
         var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(0, 0, 3, 0) }; Grid.SetRow(scroll, 1); main.Children.Add(scroll);
         var footer = new Grid { Margin = new Thickness(0, 16, 0, 0) }; footer.ColumnDefinitions.Add(new ColumnDefinition()); footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        footer.Children.Add(Text(string.IsNullOrEmpty(note) ? "設定保存在本機；修改輸出模式會停止當前連接。" : note, 11, muted: true)); var f = Text("DEVELOPMENT BUILD", 10, muted: true); Grid.SetColumn(f, 1); footer.Children.Add(f); Grid.SetRow(footer, 2); main.Children.Add(footer);
+        footer.Children.Add(Text(string.IsNullOrEmpty(note) ? "設定保存在本機；修改輸出模式會停止當前連接。" : note, 11, muted: true)); var f = Text("ControllerHub", 10, muted: true); Grid.SetColumn(f, 1); footer.Children.Add(f); Grid.SetRow(footer, 2); main.Children.Add(footer);
     }
 
     UIElement HomePage()
@@ -461,6 +485,23 @@ public sealed class MainWindow : Window
             bool selected = preferences.Output == name; var title = Text(name, 15, true); title.Foreground = Brush(selected ? Accent : Ink);
             var detail = Text(descriptions[name], 11, muted: true); detail.Margin = new Thickness(0, 7, 0, 0); var label = Column(title, detail);
             var b = Button("", () => { if(preferences.Output!=name) CancelConnection(false); preferences.Output = name; Save(); Draw(); }, id: "mode-" + name); b.Content = label; b.HorizontalContentAlignment = HorizontalAlignment.Left; b.Padding = new Thickness(16, 17, 12, 17); b.MinHeight = 84; b.Margin = new Thickness(0, 0, name == "PS5" ? 0 : 9, 0); b.BorderBrush = Brush(selected ? Accent : Line); b.Background = selected ? Brush(Selected) : Brushes.White; modes.Children.Add(b);
+        }
+        if(args.Contains("--manual-latency"))
+        {
+            var latency=Button("開始 ZL／ZR 延遲測試（30 秒）",async ()=>
+            {
+                if(gameHapticsTesting)return;gameHapticsTesting=true;
+                try
+                {
+                    note="測試進行中：請反覆按下、鬆開 ZL／ZR，各停留約半秒。";Draw();
+                    int at=Array.IndexOf(args,"--hardware-live");
+                    string result=await TriggerLatencyProbe.Run(engine,args[at+1]);Log(result);note=result;
+                    Draw();
+                }
+                catch(Exception ex){note=ex.Message;Log(ex.Message);Draw();}
+                finally {gameHapticsTesting=false;}
+            },true,id:"trigger-latency");latency.IsEnabled=engine.HasOutput && !gameHapticsTesting;
+            latency.Margin=new Thickness(0,12,0,12);root.Children.Add(latency);
         }
         root.Children.Add(modes); var current = Text($"{preferences.Controller}   →   {preferences.Output}   ·   設定保存在本機", 11, muted: true); current.Margin = new Thickness(0, 14, 0, 0); root.Children.Add(current); return root;
     }
@@ -503,7 +544,7 @@ public sealed class MainWindow : Window
     {
         bool manual=args.Contains("--manual-haptics");
         var grid = new Grid(); grid.ColumnDefinitions.Add(new()); grid.ColumnDefinitions.Add(new() { Width = new GridLength(270) });
-        var left = new StackPanel(); left.Children.Add(Text("震動強度", 20, true)); var help = Text("普通震動先行，進階觸覺獨立驗證。", 13, muted: true); help.Margin = new Thickness(0, 8, 0, 20); left.Children.Add(help);
+        var left = new StackPanel(); left.Children.Add(Text("震動強度", 20, true)); var help = Text("調整震動強度，確認手柄回饋。", 13, muted: true); help.Margin = new Thickness(0, 8, 0, 20); left.Children.Add(help);
         left.Children.Add(new ControllerDrawing(preferences.Controller == "PS5 DualSense") { Height = 225 });
         var value = Text($"震動強度   {preferences.Rumble:0}%", 17, true); Space(value); left.Children.Add(value);
         var slider = new Slider { Minimum = 0, Maximum = 100, Value = preferences.Rumble, TickFrequency = 5, IsSnapToTickEnabled = true, Margin = new Thickness(0, 5, 0, 20) };
@@ -774,6 +815,13 @@ public sealed class MainWindow : Window
         foreach(var target in new[]{"手柄","診斷與設定"}) { page=target; Draw(); await Settle(); Capture(Path.Combine(output,target=="手柄"?"language-en-small-home.png":"language-en-small-settings.png")); }
         Width=1220; Height=850;
         preferences.Language="zh-Hant"; UiText.Use(preferences.Language); Save(); page="手柄"; Draw();
+        metrics.Start();profilePolling.Start();WindowState=WindowState.Minimized;await Settle();
+        if(metrics.IsEnabled || !profilePolling.IsEnabled)throw new Exception("Minimizing must stop UI metrics while retaining automatic profile polling.");
+        Draw();if(!viewDirty)throw new Exception("Hidden view update was not deferred.");
+        WindowState=WindowState.Normal;await Settle();
+        if(viewDirty)throw new Exception("Restored view did not consume deferred update.");
+        metrics.Stop();profilePolling.Stop();
+        File.WriteAllText(Path.Combine(output,"background-ui-checks.txt"),"PASS: minimized UI timer pauses; profile polling remains enabled; deferred view refreshes on restore.");
         File.WriteAllText(Path.Combine(output, "smoke-result.txt"), "PASS: output selection; cancel; simulated timeout; simulated completion; GL/GR/C settings persistence; unwired rumble disabled; navigation; profile selection; DualSense capability state.\nNative WPF rendered at 1220x850 and 960x720 logical window sizes.\nPASS: all three language selectors persist; mapping / transport / output stay unchanged; bundled Google Sans resolves.\nNo physical controller, driver or latency tests performed.");
     }
 }

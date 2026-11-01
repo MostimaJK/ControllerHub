@@ -1,4 +1,4 @@
-{
+﻿{
   "藍牙": "Bluetooth",
   "不映射": "Unmapped",
   "USB 有線": "USB wired",
@@ -79,7 +79,6 @@
   "正在中斷": "Disconnecting",
   "正在停止震動並釋放虛擬手柄。": "Stopping feedback and releasing the virtual controller.",
   "震動強度": "Vibration strength",
-  "普通震動先行，進階觸覺獨立驗證。": "Test ordinary vibration first; advanced haptics are verified separately.",
   "儲存震動設定": "Save vibration settings",
   "回饋測試": "Feedback tests",
   "握好手柄，按藍色按鈕開始。應有兩段短震動，中間停頓；結束後程式自動退出。": "Hold the controller, then press the blue button. Expect two pulses with a pause; the app exits afterward.",
@@ -311,7 +310,7 @@
   "請先連接手柄。": "Connect a controller first.",
   "校準時連接已改變，未套用。": "Connection changed during calibration. Calibration was not applied.",
   "請先連接實體手柄。": "Connect a physical controller first.",
-  "請先連接 Xbox 輸出模式。": "Connect in Xbox output mode first.",
+  "請先連接 Xbox 輸出模式。": "Connect using Xbox output mode first.",
   "有效體感資料不足；請保持連接後重試。": "Not enough valid motion data. Keep connected and retry.",
   "校準期間偵測到移動或無效重力資料，請把手柄放平靜置後重試。": "Movement or invalid gravity detected. Put the controller flat and still, then retry.",
   "校準時手柄仍在旋轉，未儲存偏差。": "Controller was still rotating. Bias was not saved.",
@@ -353,5 +352,18 @@
   "累計報告": "Reports",
   "隨程式附帶": "Bundled",
   "無法儲存退出結果": "Could not save shutdown result",
-  "失敗演示": "Failure demo"
+  "失敗演示": "Failure demo",
+  "Windows 11  /  v0.3.1 進階測試": "Windows 11  /  v0.3.1 Preview",
+  "USB 手柄尚未完成釋放。請關閉程式，拔下 USB 等 5 秒再接回後重試。": "The USB controller has not finished releasing. Close the app, unplug USB for 5 seconds, then reconnect and retry.",
+  "手柄已斷開，資源已釋放。": "Controller disconnected; resources released.",
+  "部分連接資源未完整釋放，請到診斷與設定查看記錄。": "Some connection resources were not fully released. Check the logs in Settings & logs.",
+  "Windows 11  /  v0.3.2 進階測試": "Windows 11  /  v0.3.2 Preview",
+  "虛擬輸出寫入逾時，已停止連接以免重播舊按鍵。": "Virtual output write timed out. The connection was stopped to prevent replaying old input.",
+  "開始 ZL／ZR 延遲測試（30 秒）": "Start ZL/ZR latency test (30 seconds)",
+  "測試進行中：請反覆按下、鬆開 ZL／ZR，各停留約半秒。": "Testing: press and release ZL/ZR repeatedly, pausing about half a second each time.",
+  "測試期間輸出已中斷，未完成延遲驗證。": "Output disconnected during the test. Latency validation was not completed.",
+  "上次連接資源尚未完整釋放，請重新啟動程式，讓復原流程完成後再連接。": "The previous connection has not fully released its resources. Restart the app to run recovery before connecting again.",
+  "實體輸入尚未完成關閉，未將資源標記為已釋放。": "Physical input shutdown has not completed. Its resources remain marked as owned.",
+  "Windows 11  /  v0.3.4": "Windows 11  /  v0.3.4",
+  "調整震動強度，確認手柄回饋。": "Adjust vibration strength and check controller feedback."
 }

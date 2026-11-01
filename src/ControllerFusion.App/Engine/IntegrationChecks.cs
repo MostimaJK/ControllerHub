@@ -12,6 +12,18 @@ public static class IntegrationChecks
     {
         var results=new List<string>();
         void Check(bool value,string name) { if(!value) throw new Exception("FAIL: "+name); results.Add("PASS: "+name); }
+        await using(var releaseQueue=new VirtualOutput(true))
+        {
+            var heldTrigger=PadPackets.Encode(new DS4State {R2=255,R2Btn=true},"Xbox");
+            for(int i=0;i<100;i++)releaseQueue.Submit((byte[])heldTrigger.Clone());
+            releaseQueue.Submit(PadPackets.Encode(new DS4State(),"Xbox"));
+            int packetsUntilRelease=0;
+            while(releaseQueue.TryReadPendingFrame(out var packet))
+            {packetsUntilRelease++;if(packet[5]==0)break;}
+            Check(packetsUntilRelease<=2,"ZR release is never buried behind repeated held reports (actual packets="+packetsUntilRelease+")");
+        }
+        await RealtimeFrameChecks.Run(Check);
+        await CleanupChecks.Run(Check);
         await using(var stagedOutput=new VirtualOutput(true))
         {
             var engine=new ControllerEngine();
@@ -64,7 +76,7 @@ public static class IntegrationChecks
         {
             int failures=0;var faultSignal=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             stalled.Fault+=_=>{Interlocked.Increment(ref failures);faultSignal.TrySetResult();};
-            var held=new byte[20];for(int i=0;i<10000;i++)stalled.Submit(held);
+            var held=new byte[20];for(int i=0;i<10000;i++){held[0]=(byte)(i&1);stalled.Submit(held);}
             await faultSignal.Task.WaitAsync(TimeSpan.FromSeconds(3));await Task.Delay(30);
             Check(!stalled.Ready && failures==1,"blocked output consumer latches one fault without a log storm");
         }

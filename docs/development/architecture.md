@@ -1,6 +1,6 @@
 # 架構與設計邊界
 
-ControllerHub 採 C#／.NET 8 WPF。介面以白底、克萊因藍操作色與祖母綠成功狀態呈現，實體手柄輸入與虛擬輸出分開建立就緒證據。
+ControllerHub 採 C#／.NET 10 WPF。介面以白底、克萊因藍操作色與祖母綠成功狀態呈現，實體手柄輸入與虛擬輸出分開建立就緒證據。
 
 ```mermaid
 flowchart LR

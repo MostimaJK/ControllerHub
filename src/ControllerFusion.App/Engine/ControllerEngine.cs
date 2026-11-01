@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Threading.Channels;
 using ControllerFusion.Input;
@@ -12,12 +12,16 @@ public sealed class ControllerEngine : IAsyncDisposable
 {
     readonly FusionInput input=new();
     readonly InputStatistics statistics=new();
+    readonly object mappingGate=new();
+    readonly InputPacketMapper packetMapper=new();
     readonly InputReadiness readiness=new();
     public object InputStatistics => statistics.Snapshot();
     readonly SemaphoreSlim lifecycle=new(1,1);
     Task? startup;
     CancellationTokenSource? session;
     VirtualOutput? output;
+    object? lastOutputStatistics;
+    public object? OutputStatistics=>output?.PipelineStatistics ?? lastOutputStatistics;
     FusionFeedback? feedback;
     public bool CleanupSucceeded { get; private set; }=true;
     public bool NativeHdAvailable => feedback?.NativeHdAvailable==true;
@@ -40,6 +44,7 @@ public sealed class ControllerEngine : IAsyncDisposable
     CancellationTokenSource? runCancellation;
     bool retryable,transportChanged;
     public DS4State? LastFrame { get; private set; }
+    internal long LatestInputTimestamp=>Interlocked.Read(ref lastReport);
     public long Reports => Interlocked.Read(ref reportCount);
     public long FeedbackReports => Interlocked.Read(ref feedbackCount);
     public double Hertz { get; private set; }
@@ -53,7 +58,7 @@ public sealed class ControllerEngine : IAsyncDisposable
     public ControllerEngine()
     {
         input.Log+=s=>Log?.Invoke(s);
-        input.Frame+=OnFrame;
+        input.TimedFrame+=OnFrame;
     }
     public void Update(Preferences p)
     {
@@ -66,6 +71,7 @@ public sealed class ControllerEngine : IAsyncDisposable
     public Task Run(Preferences p,CancellationToken external,bool inputOnly=false)=>Task.Run(()=>RunCore(p,external,inputOnly),external);
     async Task RunCore(Preferences p,CancellationToken external,bool inputOnly)
     {
+        if(!CleanupSucceeded){Set("釋放未完成","上次連接資源尚未完整釋放，請重新啟動程式，讓復原流程完成後再連接。");return;}
         using var run=CancellationTokenSource.CreateLinkedTokenSource(external);
         runCancellation=run;
         Update(p);
@@ -92,10 +98,16 @@ public sealed class ControllerEngine : IAsyncDisposable
     async Task RunOnce(Preferences p,CancellationToken external,bool inputOnly)
     {
         await lifecycle.WaitAsync(external);
+        if(!CleanupSucceeded)
+        {
+            lifecycle.Release();
+            Set("釋放未完成","上次連接資源尚未完整釋放，請重新啟動程式，讓復原流程完成後再連接。");
+            return;
+        }
         using var linked=CancellationTokenSource.CreateLinkedTokenSource(external);
         try
         {
-            session=linked;CleanupSucceeded=true;
+            session=linked;CleanupSucceeded=true;lastOutputStatistics=null;
             var token=linked.Token;
             Update(p); ActiveTransport=p.Transport; selectedSlot=-1; fault=null; retryable=false; transportChanged=false;
             Interlocked.Increment(ref generation);
@@ -213,30 +225,46 @@ public sealed class ControllerEngine : IAsyncDisposable
             try
             {
                 try { SendRumble(0,0); } catch(Exception ex) {CleanupSucceeded=false;Log?.Invoke("停止震動："+ex.Message);}
-                try {if(current!=null) await current.DisposeAsync();} catch(Exception ex) {CleanupSucceeded=false;Log?.Invoke("虛擬輸出清理："+ex.Message);}
-                try {feedback?.Dispose();} catch(Exception ex) {CleanupSucceeded=false;Log?.Invoke("進階回饋清理："+ex.Message);} finally {feedback=null;}
+                try {if(current!=null) await current.DisposeAsync();} catch(Exception ex) {CleanupSucceeded=false;Log?.Invoke("虛擬輸出清理："+ex.Message);} finally {if(current!=null)lastOutputStatistics=current.PipelineStatistics;}
+                try {feedback?.Dispose();}
+                catch(AggregateException ex) when(ex.Flatten().InnerExceptions.All(e=>e is DeferredFeedbackRetirementException))
+                {Log?.Invoke("進階回饋停止已交由實體輸入生命週期完成。");}
+                catch(Exception ex) {CleanupSucceeded=false;Log?.Invoke("進階回饋清理："+ex.Message);} finally {feedback=null;}
                 if(startup!=null) { try {await startup;} catch { } }
                 try { await Task.Run(input.Stop); } catch(Exception ex) {CleanupSucceeded=false;retryable=false;Set("釋放未完成",ex.Message);}
             }
             finally
             {
+                if(!CleanupSucceeded)retryable=false;
                 selectedSlot=-1; xboxIndex=null; session=null; Battery=-1; Charging=false; Hertz=0; LastFrame=null;
                 lifecycle.Release();
                 Status=Status with { InputReady=false,OutputReady=false };
+                if(CleanupSucceeded && Status.Phase=="已停止")
+                    Status=Status with {Detail="手柄已斷開，資源已釋放。"};
+                else if(!CleanupSucceeded && Status.Phase!="釋放未完成")
+                    Status=new("釋放未完成","部分連接資源未完整釋放，請到診斷與設定查看記錄。");
                 Changed?.Invoke(Status);
             }
         }
     }
-    void OnFrame(int slot,DS4State state)
+    void OnFrame(int slot,DS4State state,long receivedTimestamp)
     {
         if(slot!=Volatile.Read(ref selectedSlot)) return;
-        var now=Stopwatch.GetTimestamp(); readiness.Observe(now);statistics.Observe(now); Interlocked.Exchange(ref lastReport,now);
+        var now=Stopwatch.GetTimestamp(); readiness.Observe(now);statistics.Observe(now); Interlocked.Exchange(ref lastReport,receivedTimestamp);
         Interlocked.Increment(ref reportCount); windowReports++;
         if(Stopwatch.GetElapsedTime(windowStart,now).TotalSeconds>=1) { Hertz=windowReports/Stopwatch.GetElapsedTime(windowStart,now).TotalSeconds; windowStart=now; windowReports=0; }
         LastFrame=state;
         var p=Volatile.Read(ref settings);
         var target=output;
-        target?.Submit(PadPackets.Encode(PadPackets.Map(state,p),target.Mode));
+        if(target!=null)
+        {
+            lock(mappingGate)
+            {
+                Span<byte> packet=stackalloc byte[33];
+                int length=packetMapper.Write(state,p,target.Mode,packet);
+                target.Submit(packet[..length],receivedTimestamp);
+            }
+        }
         try { FrameReceived?.Invoke(state); } catch { /* Diagnostics cannot break input delivery. */ }
     }
     void SendRumble(byte large,byte small)

@@ -39,6 +39,9 @@ public sealed partial class FusionInput : IDisposable
         return advertisement;
     }
     private ControlService service;
+    private readonly Func<bool> shutdownOverride;
+    public FusionInput() { }
+    internal FusionInput(Func<bool> shutdownOverride) {this.shutdownOverride=shutdownOverride;}
     private EventHandler<DebugEventArgs> audioLog;
     private bool stopFailed;
     private readonly object traceGate=new();
@@ -57,6 +60,7 @@ public sealed partial class FusionInput : IDisposable
         NLog.LogManager.GetLogger("ControllerFusion.Input").Info(detail);owner.Log?.Invoke(detail);
     }
     public event Action<int, DS4State> Frame;
+    public event Action<int, DS4State, long> TimedFrame;
     public event Action<string> Log;
 
     public void Start(string directory)
@@ -123,6 +127,10 @@ public sealed partial class FusionInput : IDisposable
         (projected ?? device.getCurrentStateRef()).CopyTo(frame);
         var m=frame.Motion;
         if(m!=null) frame.Motion=new SixAxis(-m.gyroYawFull,m.gyroPitchFull,-m.gyroRollFull,-m.accelXFull,-m.accelYFull,m.accelZFull,m.elapsed);
+        long received=device is DS4Windows.Switch2.Switch2RuntimeInputDevice runtime ? runtime.FusionInputTimestampQpc : 0;
+        if(received<=0)received=System.Diagnostics.Stopwatch.GetTimestamp();
+        try { owner.TimedFrame?.Invoke(slot,frame,received); }
+        catch(Exception ex) {owner.Log?.Invoke("輸入接收失敗："+ex.Message);}
         try { owner.Frame?.Invoke(slot, frame); }
         catch (Exception ex) { owner.Log?.Invoke("輸入接收失敗：" + ex.Message); }
         return true;
@@ -150,7 +158,7 @@ public sealed partial class FusionInput : IDisposable
     public void Stop()
     {
         if(service?.running==true && !service.Stop(false,true))
-        {stopFailed=true;throw new IOException("實體輸入尚未完成釋放，請關閉程式後重試。");}
+        {stopFailed=true;throw new IOException(targetTransport=="USB 有線"?"USB 手柄尚未完成釋放。請關閉程式，拔下 USB 等 5 秒再接回後重試。":"實體輸入尚未完成釋放，請關閉程式後重試。");}
         FusionHidingJournal.Complete();
     }
     public string BluetoothStatus
@@ -190,9 +198,10 @@ public sealed partial class FusionInput : IDisposable
     }
     public void Dispose()
     {
-        var s = service;
-        service = null;
-        try { s?.StopAndShutDown(true); FusionHidingJournal.Complete(); }
-        finally {if(audioLog!=null)AppLogger.GuiLog-=audioLog; if (Current == this) Current = null; }
+        bool stopped=shutdownOverride?.Invoke() ?? (service?.FusionStopAndShutDown(true) ?? true);
+        if(!stopped){stopFailed=true;throw new IOException("實體輸入尚未完成關閉，未將資源標記為已釋放。");}
+        service=null;
+        try {FusionHidingJournal.Complete();}
+        finally {if(audioLog!=null)AppLogger.GuiLog-=audioLog;audioLog=null;if(Current==this)Current=null;}
     }
 }

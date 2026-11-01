@@ -26,9 +26,19 @@ public sealed record OutputLease(int HostPid,long HostStartUtcTicks,int UsbPort,
         foreach(Match m in Regex.Matches(text,@"(?ms)^\s*Port\s+(\d+)\s*:(.*?)(?=^\s*Port\s+\d+\s*:|\z)"))
         {
             string block=m.Groups[2].Value;
-            bool exact=block.Contains($":{port}/{bus}-{device}",StringComparison.OrdinalIgnoreCase);
-            bool padded=block.Contains($":{port}/",StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(block,@"remote\s+bus/dev\s+0*"+bus+@"/0*"+Regex.Escape(device)+@"(?:\D|$)",RegexOptions.IgnoreCase);
-            if(exact || padded) found.Add(int.Parse(m.Groups[1].Value));
+            bool matches=false;
+            foreach(Match endpoint in Regex.Matches(block,@"usbip://[^\s]+",RegexOptions.IgnoreCase))
+            {
+                if(!Uri.TryCreate(endpoint.Value.TrimEnd(')',','),UriKind.Absolute,out var uri) ||
+                    !uri.IsLoopback || uri.Port!=port)continue;
+                string id=uri.AbsolutePath.Trim('/');var parts=id.Split('-');
+                bool exact=parts.Length==2 && uint.TryParse(parts[0],out var actualBus) &&
+                    uint.TryParse(parts[1],out var actualDevice) && uint.TryParse(device,out var expectedDevice) &&
+                    actualBus==bus && actualDevice==expectedDevice;
+                bool padded=id.Length==0 && Regex.IsMatch(block,@"remote\s+bus/dev\s+0*"+bus+@"/0*"+Regex.Escape(device)+@"(?:\D|$)",RegexOptions.IgnoreCase);
+                matches|=exact || padded;
+            }
+            if(matches && int.TryParse(m.Groups[1].Value,out int number))found.Add(number);
         }
         return found.ToArray();
     }

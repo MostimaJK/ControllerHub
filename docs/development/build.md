@@ -2,7 +2,9 @@
 
 ## 工具與依賴
 
-在 Windows x64 安裝 Git、.NET 8 SDK。所有命令從專案根目錄執行，PowerShell 7 或 Windows PowerShell 均可。
+SDK 版本由 `global.json` 固定為 10.0.403（允許同功能帶的後續修補）。打包 runtime 固定為 10.0.14，見 lock。建置腳本使用系統 SDK，或 `CONTROLLERHUB_DOTNET` 指定的 CLI；本機存在 `artifacts/toolchains/dotnet10/dotnet.exe` 時也可使用。選擇過程不修改系統 PATH。
+
+在 Windows x64 安裝 Git、.NET 10 SDK。所有命令從專案根目錄執行，PowerShell 7 或 Windows PowerShell 均可。
 
 ```powershell
 ./scripts/bootstrap.ps1

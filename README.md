@@ -1,10 +1,10 @@
-# ControllerHub
+﻿# ControllerHub
 
 **讓 Switch 2 Pro 與 PS5 DualSense 在 Windows 上連得清楚、玩得順手。**
 
 A Windows controller workspace for Switch 2 Pro and DualSense — USB / Bluetooth, virtual gamepads, motion and haptics.
 
-`Windows 11 x64` · `C# / WPF / .NET 8` · `GPL-3.0-or-later` · **v0.3.0 Preview**
+`Windows 11 x64` · `C# / WPF / .NET 10` · `GPL-3.0-or-later` · **v0.3.4 Preview**
 
 > 本專案目前為預覽版。主要輸入與回饋鏈路已有實機驗證，但尚未完成所有遊戲、藍牙與長時間穩定性驗收。請先閱讀[功能與相容性](docs/features.md)及[已知問題](docs/known-issues.md)。
 
@@ -24,14 +24,27 @@ A Windows controller workspace for Switch 2 Pro and DualSense — USB / Bluetoot
 
 Xbox 是一般 Windows 遊戲的建議起點。程式不要求遊戲從 Steam 啟動；PS5／Pro 模式能否使用進階功能，仍取決於遊戲或輸入中介軟體支援。
 
+## v0.3.4 更新
+
+- **連接與退出更可靠**：修正停止寫入的重試、精確查核本次虛擬連接埠；清理失敗保留復原記錄，避免疊加連接。
+- **鬆鍵即時性**：合併重複狀態，避免舊輸入堆積；加入過期輸入及斷流中立保護。
+- **.NET 10 與資源使用**：重用映射與編碼緩衝，無輸入時採事件等待，最小化暫停介面指標刷新。
+- **日常使用介面**：移除開發版浮水印及測試版側欄標示，保留必要的診斷與回饋檢查。
+
+近期自動檢查：109 項離線檢查、2,430 項相關上游回歸測試、18 項 Windows 消費端檢查通過；Switch USB 同一引擎八輪連接／模式切換／斷開通過。使用者已回報一段時間使用暫未再出現問題；這不等於所有遊戲、手柄或長期負載皆已通過。詳見[集中驗收](docs/development/completion.md)與[性能測量](docs/development/performance.md)。
+
 ## 快速開始
 
 1. 下載單 EXE 便攜版直接執行；或解壓完整 ZIP，保留 EXE、DLL、`Backend` 等資料夾。
-2. **單 EXE 已包含 .NET 8**；ZIP 版需安裝 **.NET 8 Desktop Runtime x64**。需要虛擬輸出時，兩種版本都需要 **usbip-win2 Client** 驅動。
+2. **單 EXE 已包含 .NET 10**；ZIP 版需安裝 **.NET 10 Desktop Runtime x64**。需要虛擬輸出時，兩種版本都需要 **usbip-win2 Client** 驅動。
 3. 執行 `ControllerHub.exe`，選擇手柄型號、USB／藍牙，以及輸出模式；初次使用建議選 **Xbox**。
 4. 按「連接手柄」，確認顯示 **已連接・遊戲輸出就緒**，再啟動遊戲。
 
-從 [GitHub Releases 下載 Windows 預覽包](https://github.com/MostimaJK/ControllerHub/releases/tag/v0.3.0-preview)。可選擇 **`ControllerHub-v0.3.0-preview-portable-win-x64.exe`**（單檔、包含 .NET）或 `ControllerHub-v0.3.0-preview-win-x64.zip`（完整解壓、另裝 .NET）。原始碼倉庫及 GitHub 的 Source code ZIP 不包含可直接執行的成品。
+從 [GitHub Releases 下載 v0.3.4](https://github.com/MostimaJK/ControllerHub/releases/tag/v0.3.4-preview)：
+
+- **[單 EXE 便攜版](https://github.com/MostimaJK/ControllerHub/releases/download/v0.3.4-preview/ControllerHub-v0.3.4-preview-portable-win-x64.exe)**：包含 .NET 10，下載後直接啟動。
+- [完整 ZIP](https://github.com/MostimaJK/ControllerHub/releases/download/v0.3.4-preview/ControllerHub-v0.3.4-preview-win-x64.zip)：需完整解壓並安裝 .NET 10 Desktop Runtime x64。
+- 每個成品提供 SHA-256；同一 Release 附有對應原始碼。GitHub 的 Source code ZIP 是原始碼，不是可執行成品。
 
 單 EXE 首次啟動會自動準備本機快取，之後重用已校驗的檔案。它不會自動安裝驅動。詳見[便攜版說明](docs/portable.md)。
 
@@ -65,7 +78,7 @@ Xbox 是一般 Windows 遊戲的建議起點。程式不要求遊戲從 Steam �
 
 ## 開發與重建
 
-需要 Windows、Git 及 **.NET 8 SDK**。從專案根目錄執行：
+需要 Windows、Git 及 **.NET 10 SDK**。從專案根目錄執行：
 
 ```powershell
 ./scripts/bootstrap.ps1

@@ -1,103 +1,53 @@
-﻿# ControllerHub
+# ControllerHub
 
-**讓 Switch 2 Pro 與 PS5 DualSense 在 Windows 上連得清楚、玩得順手。**
+**English** · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md)
 
-A Windows controller workspace for Switch 2 Pro and DualSense — USB / Bluetooth, virtual gamepads, motion and haptics.
+Connect a Nintendo Switch 2 Pro Controller or Sony DualSense to a Windows PC over USB or Bluetooth. Choose the virtual controller your game expects, map extra buttons, and adjust motion and rumble from one window.
 
-`Windows 11 x64` · `C# / WPF / .NET 10` · `GPL-3.0-or-later` · **v0.3.4 Preview**
+Windows 11 x64 · .NET 10 · GPL-3.0-or-later · **v1.0.0**
 
-> 本專案目前為預覽版。主要輸入與回饋鏈路已有實機驗證，但尚未完成所有遊戲、藍牙與長時間穩定性驗收。請先閱讀[功能與相容性](docs/features.md)及[已知問題](docs/known-issues.md)。
+![ControllerHub controller page in English, shown offline](docs/screenshots/english-overview.png)
 
-![ControllerHub 最新手柄工作台介面](docs/screenshots/overview.png)
+## Quick start
 
-*最新程式的離線介面預覽，尚未連接實體手柄。先前硬體實測另見[驗收狀態](docs/development/validation.md)；接收頻率不是端到端延遲。*
+1. Open [GitHub Releases](https://github.com/MostimaJK/ControllerHub/releases) and choose a Windows x64 download. The portable EXE includes .NET and prepares a local cache on first launch. The smaller ZIP requires the **.NET 10 Desktop Runtime x64**. Extract the entire ZIP before running it.
+2. For virtual gamepad output, install the **usbip-win2 Client** driver. Both downloads require it. To check physical input alone, use the input-only test on the controller page.
+3. Open ControllerHub, choose your controller and connection method, then select an output mode. **Xbox** is a good starting point for most Windows games.
+4. Select **Connect controller**. Once the app shows **Connected · Game output ready**, open your game.
 
-## 你可以用它做什麼
+The app starts in English on first launch. Open **Settings & logs → Language** to choose English, 简体中文 or 繁體中文. Your choice is saved on this PC.
 
-- **連接手柄**：支援 Switch 2 Pro、DualSense 的 USB／藍牙輸入路徑；DualSense 藍牙尚待實機驗收。
-- **切換遊戲輸出**：Xbox、PS5、Pro1、Steam / Pro2 四種虛擬模式，依遊戲選擇。
-- **調整 GL／GR／C**：為 Switch 2 Pro 背鍵和 C 鍵設定映射，儲存到電腦上的配置。
-- **震動與觸覺**：普通震動、Switch 2 HD 震動，以及 PS5 USB 原生觸覺、自適應扳機的回饋轉發。
-- **體感與校準**：讀取六軸資料、儲存靜置校準，轉發至支援體感的虛擬模式。
-- **三語介面**：繁體中文、简体中文、English，即時切換並保存；英文使用隨附的 Google Sans。
-- **看懂目前狀態**：祖母綠連接膠囊、電量／充電狀態、輸入率、分階段連接提示和可預覽的診斷報告。
+## Controller support
 
-Xbox 是一般 Windows 遊戲的建議起點。程式不要求遊戲從 Steam 啟動；PS5／Pro 模式能否使用進階功能，仍取決於遊戲或輸入中介軟體支援。
+| Feature | What you can do |
+| --- | --- |
+| Virtual output | Choose Xbox, PS5, Pro1 or Steam / Pro2. Games can run outside Steam. Motion and advanced feedback depend on game or middleware support. |
+| Switch 2 Pro | Map GL, GR and C in a local profile. Adjust rumble strength and test supported HD rumble paths. |
+| DualSense | Use USB input and forward supported haptics and adaptive-trigger effects over USB. Bluetooth input still needs hardware validation. |
+| Motion | Read six-axis input, save a stationary calibration and forward motion to a compatible output mode. |
+| Diagnostics | Follow the connection steps, check battery and input report rate, and preview a diagnostic report. Report rate measures incoming samples, not end-to-end latency. |
 
-## v0.3.4 更新
+See the [1.0.0 release notes](RELEASE_NOTES.md) for downloads and validation limits. Detailed guides in Traditional Chinese cover [installation](docs/install.md), [usage](docs/usage.md), [compatibility](docs/features.md), [troubleshooting](docs/troubleshooting.md) and [known issues](docs/known-issues.md).
 
-- **連接與退出更可靠**：修正停止寫入的重試、精確查核本次虛擬連接埠；清理失敗保留復原記錄，避免疊加連接。
-- **鬆鍵即時性**：合併重複狀態，避免舊輸入堆積；加入過期輸入及斷流中立保護。
-- **.NET 10 與資源使用**：重用映射與編碼緩衝，無輸入時採事件等待，最小化暫停介面指標刷新。
-- **日常使用介面**：移除開發版浮水印及測試版側欄標示，保留必要的診斷與回饋檢查。
+## Build from source
 
-近期自動檢查：109 項離線檢查、2,430 項相關上游回歸測試、18 項 Windows 消費端檢查通過；Switch USB 同一引擎八輪連接／模式切換／斷開通過。使用者已回報一段時間使用暫未再出現問題；這不等於所有遊戲、手柄或長期負載皆已通過。詳見[集中驗收](docs/development/completion.md)與[性能測量](docs/development/performance.md)。
-
-## 快速開始
-
-1. 下載單 EXE 便攜版直接執行；或解壓完整 ZIP，保留 EXE、DLL、`Backend` 等資料夾。
-2. **單 EXE 已包含 .NET 10**；ZIP 版需安裝 **.NET 10 Desktop Runtime x64**。需要虛擬輸出時，兩種版本都需要 **usbip-win2 Client** 驅動。
-3. 執行 `ControllerHub.exe`，選擇手柄型號、USB／藍牙，以及輸出模式；初次使用建議選 **Xbox**。
-4. 按「連接手柄」，確認顯示 **已連接・遊戲輸出就緒**，再啟動遊戲。
-
-從 [GitHub Releases 下載 v0.3.4](https://github.com/MostimaJK/ControllerHub/releases/tag/v0.3.4-preview)：
-
-- **[單 EXE 便攜版](https://github.com/MostimaJK/ControllerHub/releases/download/v0.3.4-preview/ControllerHub-v0.3.4-preview-portable-win-x64.exe)**：包含 .NET 10，下載後直接啟動。
-- [完整 ZIP](https://github.com/MostimaJK/ControllerHub/releases/download/v0.3.4-preview/ControllerHub-v0.3.4-preview-win-x64.zip)：需完整解壓並安裝 .NET 10 Desktop Runtime x64。
-- 每個成品提供 SHA-256；同一 Release 附有對應原始碼。GitHub 的 Source code ZIP 是原始碼，不是可執行成品。
-
-單 EXE 首次啟動會自動準備本機快取，之後重用已校驗的檔案。它不會自動安裝驅動。詳見[便攜版說明](docs/portable.md)。
-
-[安裝指南](docs/install.md) · [使用指南](docs/usage.md) · [功能與相容性](docs/features.md) · [故障排查](docs/troubleshooting.md)
-
-## 介面語言
-
-到「診斷與設定 → Language / 語言」選擇繁體中文、简体中文或 English，立即生效並保存在本機。切換語言不改動按鍵映射、連接方式或虛擬輸出模式。英文使用隨程式附帶的 Google Sans，不需另外安裝字體。
-
-![English 介面與 Google Sans](docs/screenshots/english-overview.png)
-
-![診斷與設定中的語言選單](docs/screenshots/language-settings.png)
-
-*以上為最新程式的離線介面示範，未連接實體手柄。*
-
-## 介面預覽
-
-### 背鍵與 C 鍵
-
-![Switch 2 Pro 的 GL、GR 與 C 鍵映射介面](docs/screenshots/mapping.png)
-
-### 體感與進階回饋
-
-![體感校準、原生觸覺、自適應扳機與音訊轉震動設定](docs/screenshots/advanced.png)
-
-### DualSense
-
-![DualSense 手柄頁面與圖示](docs/screenshots/dualsense.png)
-
-*以上三張是由最新程式離線渲染的介面示範，展示版面與控制項，不代表圖中功能已完成實機連接。實測範圍請以功能表為準。*
-
-## 開發與重建
-
-需要 Windows、Git 及 **.NET 10 SDK**。從專案根目錄執行：
+On Windows x64 with Git and the .NET 10 SDK, run these commands from the project root:
 
 ```powershell
 ./scripts/bootstrap.ps1
 ./build.ps1 -Check -Package
 ```
 
-`bootstrap.ps1` 依照 `DEPENDENCIES.lock.json` 還原固定版本上游原始碼、套用整合補丁並校驗後端雜湊。`build.ps1` 產生 `dist/`，執行離線檢查，並將 ZIP 與 SHA-256 放到 `releases/latest/`。此流程不會安裝驅動或操作實體手柄。
+Bootstrap restores the pinned upstream source, applies the integration patch and checks backend hashes. The build writes the application to `dist/` and the ZIP and SHA-256 checksum to `releases/latest/`. Run `./scripts/build-portable.ps1` to build the self-contained EXE.
 
-詳見[開發指南](docs/development/build.md)、[架構](docs/development/architecture.md)與[驗收狀態](docs/development/validation.md)。
+The packaged app opens the WebView2 interface and falls back to WPF if WebView2 cannot start. To compare interfaces from a source checkout, close the running instance and use one of these launchers. They share the same engine and local settings.
 
-## 授權與致謝
+| Interface | Source launcher |
+| --- | --- |
+| WebView2 | `Start-ControllerHub-WebView2.bat` |
+| Native WPF | `Start-ControllerHub.bat` |
+| Electron | `Start-ControllerHub-Electron.bat` (uses npm if Electron is missing) |
 
-ControllerHub 整合原始碼使用 **GPL-3.0-or-later**，完整授權見 [COPYING](COPYING)。本專案建立在以下開源工作之上：
+## License and credits
 
-- [DS4Windows](https://github.com/hbashton/DS4Windows)：手柄輸入、裝置生命週期與回饋基礎。
-- [PRO2 Bridge](https://github.com/LeonChrome/XinHeLianSheng-Pro2-Bridge)：PRO2／VIIPER 整合與協定參考。
-- [usbip-win2](https://github.com/vadimgrn/usbip-win2)：虛擬 USB 裝置輸出所需的 Windows 驅動。
-- [NS2ProCon](https://github.com/ErenYaeger999/NS2ProCon)：Switch 2 Pro 手柄圖例的來源。
-- [Gamepad Asset Pack](https://github.com/AL2009man/Gamepad-Asset-Pack)：DualSense 圖片，Al. Lopez。
-- [HidHide](https://github.com/nefarius/HidHide)：可選的實體 HID 隱藏功能。
-
-各元件保留自己的授權；版本、雜湊、對應原始碼與圖片聲明見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)、[DEPENDENCIES.lock.json](DEPENDENCIES.lock.json) 與 [圖片授權](docs/artwork.md)。這是獨立社群專案，並非 Nintendo、Sony 或 Microsoft 的官方軟體。
+ControllerHub is an independent community project licensed under [GPL-3.0-or-later](COPYING). It builds on [DS4Windows](https://github.com/hbashton/DS4Windows), [PRO2 Bridge](https://github.com/LeonChrome/XinHeLianSheng-Pro2-Bridge), [usbip-win2](https://github.com/vadimgrn/usbip-win2) and optional [HidHide](https://github.com/nefarius/HidHide) support. Controller artwork comes from [NS2ProCon](https://github.com/ErenYaeger999/NS2ProCon) and Al. Lopez's [Gamepad Asset Pack](https://github.com/AL2009man/Gamepad-Asset-Pack). See the [third-party notices](THIRD_PARTY_NOTICES.md) and [dependency lock](DEPENDENCIES.lock.json) for component licenses and source revisions.

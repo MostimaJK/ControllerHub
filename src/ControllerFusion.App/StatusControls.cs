@@ -12,6 +12,9 @@ public sealed class ConnectionBadge : Border
     readonly TextBlock label = new() { FontSize=12, FontWeight=FontWeights.SemiBold, VerticalAlignment=VerticalAlignment.Center };
     (bool Input, bool Output, string Phase)? previous;
 
+    public string State { get; private set; } = "idle";
+    public string Label => label.Text;
+
     public ConnectionBadge()
     {
         CornerRadius=new CornerRadius(18); Padding=new Thickness(13,6,13,6);
@@ -23,10 +26,12 @@ public sealed class ConnectionBadge : Border
         var state=(input,output,phase); if(previous==state) return; previous=state;
         bool ready=input && output;
         bool warning=(!input && output) || phase.Contains("失敗") || phase.Contains("未完成");
-        string text=ready ? "已連接 · 遊戲輸出就緒" : input ? "已連接 · 實體輸入就緒" : output ? "實體輸入已中斷" : phase;
-        Background=new SolidColorBrush(ready ? Emerald : input ? Color.FromRgb(236,253,245) : warning ? Color.FromRgb(255,247,237) : Color.FromRgb(239,243,255));
-        var foreground=ready ? Brushes.White : new SolidColorBrush(input ? Color.FromRgb(6,95,70) : warning ? Color.FromRgb(154,52,18) : Color.FromRgb(51,65,85));
-        symbol.Text=input ? "✓" : warning ? "!" : "●"; symbol.Foreground=foreground;
+        State = ready ? "ready" : warning ? "warning" : input ? "input" : "idle";
+        string text = ready ? "已連接 · 遊戲輸出就緒" : warning ? (output && !input ? "實體輸入已中斷" : phase)
+            : input ? (phase=="輸入測試中" ? phase : "實體輸入就緒 · 遊戲輸出未就緒") : phase;
+        Background=new SolidColorBrush(ready ? Emerald : warning ? Color.FromRgb(255,247,237) : Color.FromRgb(239,243,255));
+        var foreground=ready ? Brushes.White : new SolidColorBrush(warning ? Color.FromRgb(154,52,18) : Color.FromRgb(51,65,85));
+        symbol.Text=ready ? "✓" : warning ? "!" : "●"; symbol.Foreground=foreground;
         text=UiText.Get(text); label.Text=text; label.Foreground=foreground;
         AutomationProperties.SetName(this,text);
     }

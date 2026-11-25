@@ -1,9 +1,10 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ControllerFusion.Engine;
@@ -12,7 +13,7 @@ namespace ControllerFusion;
 
 public sealed class Preferences
 {
-    public string Language { get; set; } = "zh-Hant";
+    public string Language { get; set; } = UiText.DefaultLanguage;
     public string Controller { get; set; } = "Switch 2 Pro";
     public string Output { get; set; } = "Xbox";
     public string Transport { get; set; } = "藍牙";
@@ -118,7 +119,7 @@ public static class Program
     }
 }
 
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     static readonly Color Ink = Color.FromRgb(24, 32, 49);
     static readonly Color Muted = Color.FromRgb(99, 110, 128);
@@ -127,6 +128,8 @@ public sealed class MainWindow : Window
     static readonly Color Selected = Color.FromRgb(238, 242, 255);
     static readonly Color Accent = Color.FromRgb(0, 47, 167);
     readonly Grid shell = new();
+    readonly TranslateTransform navPosition = new();
+    int previousTab = -1;
     readonly List<string> logs = new();
     readonly string[] args;
     readonly string preferencesPath;
@@ -158,10 +161,12 @@ public sealed class MainWindow : Window
     string? selectedProfile;
     readonly List<string> profiles = new() { "預設配置", "動作遊戲", "模擬駕駛" };
 
+    static string VersionLabel => "v" + typeof(MainWindow).Assembly.GetName().Version!.ToString(3);
+
     public MainWindow(string[] arguments)
     {
         args = arguments;
-        Title = "ControllerHub";
+        Title = $"ControllerHub {VersionLabel}";
         Width = 1220; Height = 850; MinWidth = 960; MinHeight = 720;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = Brush(Canvas); Foreground = Brush(Ink);
@@ -180,37 +185,12 @@ public sealed class MainWindow : Window
         if(args.Contains("--manual-latency")) {page="手柄";preferences.Output="Xbox";preferences.AudioHaptics=false;preferences.AutoReconnect=false;preferences.AutoTransport=false;preferences.AutoProfiles=false;preferences.MinimizeToTray=false;}
         if(args.Contains("--manual-haptics")) {page="震動";preferences.Output="PS5";preferences.AudioHaptics=false;preferences.AutoReconnect=false;preferences.AutoTransport=false;preferences.AutoProfiles=false;preferences.MinimizeToTray=false;}
         selectedProfile = profiles[0];
+        if (args.Contains("--desktop-model")) PrepareDesktop();
         Resources.Add(typeof(Button), ButtonStyle());
-        Resources.Add(typeof(ComboBox), new Style(typeof(ComboBox)) { Setters = { new Setter(Control.PaddingProperty, new Thickness(10, 7, 10, 7)), new Setter(Control.MinHeightProperty, 36.0), new Setter(Control.ForegroundProperty, Brush(Ink)), new Setter(Control.FontSizeProperty, 14.0) } });
-        Resources.MergedDictionaries.Add((ResourceDictionary)System.Windows.Markup.XamlReader.Parse("""
-        <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-          <Style TargetType="ComboBoxItem">
-            <Setter Property="Padding" Value="12,9"/><Setter Property="Foreground" Value="#182031"/>
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
-              <Border x:Name="ItemSurface" CornerRadius="5" Padding="{TemplateBinding Padding}" Background="Transparent"><ContentPresenter/></Border>
-              <ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="#EEF2FF"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="FontWeight" Value="SemiBold"/></Trigger></ControlTemplate.Triggers>
-            </ControlTemplate></Setter.Value></Setter>
-          </Style>
-          <Style TargetType="ComboBox">
-            <Setter Property="MinHeight" Value="38"/><Setter Property="Foreground" Value="#182031"/><Setter Property="FontSize" Value="13"/>
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
-              <Grid>
-                <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
-                  <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="Surface" CornerRadius="8" BorderBrush="#8F9BAF" BorderThickness="1" Background="#FFFFFF"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="30"/></Grid.ColumnDefinitions><ContentPresenter Margin="11,8,0,8" HorizontalAlignment="Left" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="⌄" Foreground="#636E80" VerticalAlignment="Center" HorizontalAlignment="Center"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="#EEF2FF"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template>
-                  <TextBlock Text="{Binding SelectionBoxItem, RelativeSource={RelativeSource TemplatedParent}}"/>
-                </ToggleButton>
-                <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="None">
-                  <Border Background="White" CornerRadius="8" BorderBrush="#8F9BAF" BorderThickness="1" Padding="4" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Margin="0,4,0,0"><ScrollViewer MaxHeight="310" CanContentScroll="True"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer></Border>
-                </Popup>
-              </Grid>
-              <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger></ControlTemplate.Triggers>
-            </ControlTemplate></Setter.Value></Setter>
-          </Style>
-        </ResourceDictionary>
-        """));
-        Resources.Remove(typeof(ComboBox));
+        Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/ControllerHub;component/ControlStyles.xaml", UriKind.Relative) });
         Content = new Border { Background = Brush(Canvas), Child = shell };
-        Icon = new DrawingImage(new GeometryDrawing(Brush(Accent), null, Geometry.Parse("M2,2 L30,2 L30,30 L2,30 Z M8,14 L14,14 L14,8 L18,8 L18,14 L24,14 L24,18 L18,18 L18,24 L14,24 L14,18 L8,18 Z")));
+        if (args.Length == 0 || args.Contains("--webview")) PrepareWebView();
+        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/app.ico"));
         DispatcherTimer? manualDeadline=null;
         if(args.Contains("--manual-haptics")) {
             manualDeadline=new DispatcherTimer {Interval=TimeSpan.FromSeconds(120)};
@@ -238,16 +218,17 @@ public sealed class MainWindow : Window
         };
         engine.Log += s => Dispatcher.BeginInvoke(new Action(()=>Log(s)));
         engine.FrameReceived += s => { lock(observedGate) { if(s.PS)observedKeys.Add("PS");if(s.Share)observedKeys.Add("Create / Share");if(s.BLP)observedKeys.Add("GL");if(s.BRP)observedKeys.Add("GR");if(s.Switch2RawInputStatus.CButton)observedKeys.Add("C");if(s.Cross||s.Circle||s.Square||s.Triangle)observedKeys.Add("face"); } };
-        engine.Changed += s => Dispatcher.BeginInvoke(new Action(()=> { if(closing)return; phase=s.Phase; note=s.Detail; connected=s.OutputReady; Draw(); }));
+        engine.Changed += s => Dispatcher.BeginInvoke(new Action(()=> { if(closing)return; UpdateConnectionSteps(s); phase=s.Phase; note=s.Detail; connected=s.OutputReady; Draw(); }));
         metrics.Tick += (_,_) =>
         {
             if(frequencyText!=null) frequencyText.Text=engine.HasInput?$"{engine.Hertz:0} Hz":"— Hz";
             batteryIndicator?.Update(engine.Battery,engine.Charging,engine.HasInput);
-            headerBadge?.Update(engine.HasInput,engine.HasOutput,engine.HasInput?phase:"等待連接");
+            headerBadge?.Update(engine.HasInput,engine.HasOutput,phase=="尚未連接"?"等待連接":phase);
             connectionBadge?.Update(engine.HasInput,engine.HasOutput,phase);
             if(inputStateText!=null) { var s=engine.LastFrame; inputStateText.Text=s==null || !engine.HasInput?UiText.Get("等待實體按鍵輸入"):preferences.Controller == "PS5 DualSense" ? $"L {s.LX},{s.LY} · R {s.RX},{s.RY}   PS {(s.PS?"●":"○")}  Create {(s.Share?"●":"○")}  L2 {s.L2}  R2 {s.R2}" : $"L {s.LX},{s.LY} · R {s.RX},{s.RY}   GL {(s.BLP?"●":"○")}  GR {(s.BRP?"●":"○")}  C {(s.Switch2RawInputStatus.CButton?"●":"○")}"; }
             if(hapticsText!=null) hapticsText.Text=UiText.Get(engine.HapticsStatus);
             if(motionText!=null) { var m=engine.LastFrame?.Motion; motionText.Text=UiText.Get(engine.HasInput && m!=null?$"角速度 °/s   P {m.angVelPitch:F2}   Y {m.angVelYaw:F2}   R {m.angVelRoll:F2}\n加速度 g   X {m.accelXG:F2}   Y {m.accelYG:F2}   Z {m.accelZG:F2}":"等待有效體感資料"); }
+            PublishReadings();
             var liveAt=Array.IndexOf(args,"--hardware-live");
             if(liveAt>=0 && liveAt+1<args.Length) { try { string[] keys;lock(observedGate)keys=observedKeys.ToArray(); ProfileStore.AtomicWrite(args[liveAt+1],JsonSerializer.Serialize(new{engine.Status,engine.Reports,engine.FeedbackReports,engine.Hertz,engine.HasInput,engine.HasOutput,engine.Battery,engine.Charging,engine.HapticsStatus,engine.HapticsStatistics,engine.NativeHdAvailable,engine.ActiveTransport,engine.InputStatistics,engine.OutputStatistics,Motion=engine.LastFrame?.Motion is {} motion?new{motion.angVelPitch,motion.angVelYaw,motion.angVelRoll,motion.accelXG,motion.accelYG,motion.accelZG}:null,engine.BluetoothStatus,engine.Candidates,engine.XboxState,Keys=keys})); } catch { } }
         };
@@ -379,6 +360,12 @@ public sealed class MainWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(b,UiText.Get(string.IsNullOrWhiteSpace(label)?id??"操作":label));
         b.Click += (_, _) => action(); return b;
     }
+    static void StyleChoice(Button button, bool selected)
+    {
+        button.Background = selected ? Brush(Selected) : Brushes.White;
+        button.BorderBrush = Brush(selected ? Accent : Line);
+    }
+
     static StackPanel Column(params UIElement[] children) { var p = new StackPanel(); foreach (var c in children) p.Children.Add(c); return p; }
     static StackPanel Row(params UIElement[] children) { var p = new StackPanel { Orientation = Orientation.Horizontal }; foreach (var c in children) p.Children.Add(c); return p; }
     static void Space(FrameworkElement e, double bottom = 12) => e.Margin = new Thickness(0, 0, 0, bottom);
@@ -402,7 +389,76 @@ public sealed class MainWindow : Window
         }
         catch { /* A log failure must not break controller input. */ }
     }
-    void Save() { try { Directory.CreateDirectory(Path.GetDirectoryName(preferencesPath)!); ProfileStore.SavePreferences(preferencesPath,preferences); engine.Update(preferences); note = "設定已儲存並套用。"; Log(note); } catch (Exception ex) { note = "儲存失敗：" + ex.Message; } }
+    void Save() { try { Directory.CreateDirectory(Path.GetDirectoryName(preferencesPath)!); ProfileStore.SavePreferences(preferencesPath,preferences); engine.Update(preferences); note = ""; Log("設定已儲存並套用。"); } catch (Exception ex) { note = "儲存失敗：" + ex.Message; } }
+
+    const double tabHeight = 46;
+    string? sidebarLanguage;
+    readonly List<(string Title, Border Icon, TextBlock Label)> navItems = new();
+
+    static Border LucideIcon(string name, Brush color, double size) => new()
+    {
+        Width=size, Height=size, Background=color, VerticalAlignment=VerticalAlignment.Center,
+        OpacityMask=new ImageBrush(new BitmapImage(new Uri($"pack://application:,,,/Icons/{name}.png")))
+    };
+
+    void BuildSidebar()
+    {
+        var sidebar = new Grid { Margin = new Thickness(16, 25, 16, 20) };
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        sidebar.RowDefinitions.Add(new RowDefinition());
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var logo = new Border { Width = 34, Height = 34, CornerRadius = new CornerRadius(10), Background = Brush(Accent), Margin = new Thickness(0, 0, 9, 0), Child = LucideIcon("gamepad-2", Brushes.White, 26) };
+        sidebar.Children.Add(Row(logo, Column(Text("Controller", 15, true), Text("Hub", 15, true))));
+        var nav = new StackPanel { Margin = new Thickness(0, 42, 0, 0) };
+        var glyphs = new[] { "gamepad-2", "activity", "git-pull-request", "sliders-horizontal", "folders", "settings" };
+        var titles = new[] { "手柄", "震動", "背鍵 / C 鍵", "體感與進階", "遊戲配置", "診斷與設定" };
+        for (int i = 0; i < titles.Length; i++)
+        {
+            var title = titles[i]; bool active = page == title;
+            var icon = LucideIcon(glyphs[i], Brush(active ? Accent : Muted), 18);
+            icon.Margin = new Thickness(0, 0, 11, 0);
+            var label = Text(title, 13, active); label.Foreground = Brush(active ? Accent : Muted);
+            var tab = Button("", () => { if (page == title) return; page = title; note = ""; Draw();  }, id: "nav-" + title);
+            System.Windows.Automation.AutomationProperties.SetName(tab,UiText.Get(title));
+            tab.Content = Row(icon, label); tab.Background = Brushes.Transparent; var navStyle = new Style(typeof(Button), (Style)Resources[typeof(Button)]); navStyle.Setters.Add(new Setter(Control.BorderBrushProperty, Brushes.Transparent)); tab.Style = navStyle;
+            tab.HorizontalContentAlignment = HorizontalAlignment.Left; tab.Padding = new Thickness(12, 13, 8, 13); tab.Margin = new Thickness(0, 0, 6, 6); tab.Height = tabHeight; nav.Children.Add(tab);
+            navItems.Add((title, icon, label));
+        }
+        var navigation = new Grid { Margin = nav.Margin };
+        nav.Margin = new Thickness(0);
+        var indicator = new Border { Background = Brush(Selected), CornerRadius = new CornerRadius(8),
+            VerticalAlignment = VerticalAlignment.Top, Height = tabHeight, Margin = new Thickness(0, 0, 6, 0),
+            RenderTransform = navPosition, IsHitTestVisible = false };
+        navigation.Children.Add(indicator);
+        navigation.Children.Add(nav);
+        Grid.SetRow(navigation, 1); sidebar.Children.Add(navigation);
+        var bottom = Column(Text("個人工作台", 12, true), Text($"Windows 11  /  {VersionLabel}", 11, muted: true)); Grid.SetRow(bottom, 3); sidebar.Children.Add(bottom);
+        shell.Children.Add(new Border { Background = Brushes.White, BorderBrush = Brush(Line), BorderThickness = new Thickness(0, 0, 1, 0), Child = sidebar });
+    }
+
+    void UpdateNavigation()
+    {
+        var index = navItems.FindIndex(item => item.Title == page);
+        if (index == previousTab) return;
+        foreach (var item in navItems)
+        {
+            bool active = item.Title == page;
+            item.Icon.Background = item.Label.Foreground = Brush(active ? Accent : Muted);
+            item.Label.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+        if (index != previousTab)
+        {
+            double start = navPosition.Y;
+            double target = index * (tabHeight + 6);
+            navPosition.BeginAnimation(TranslateTransform.YProperty, null);
+            navPosition.Y = target;
+            if (previousTab >= 0 && SystemParameters.ClientAreaAnimation)
+                navPosition.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(start, target, TimeSpan.FromMilliseconds(320))
+                { EasingFunction = new BackEase { Amplitude = .18, EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop });
+            previousTab = index;
+        }
+    }
 
     void Draw()
     {
@@ -413,42 +469,48 @@ public sealed class MainWindow : Window
         tray?.ApplyLanguage();
         Language = System.Windows.Markup.XmlLanguage.GetLanguage(UiText.Current);
         frequencyText=null;batteryIndicator=null;inputStateText=null;headerBadge=null;connectionBadge=null;motionText=null;hapticsText=null;
-        shell.Children.Clear(); shell.RowDefinitions.Clear(); shell.ColumnDefinitions.Clear(); shell.Margin = new Thickness(0);
-        shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
-        shell.ColumnDefinitions.Add(new ColumnDefinition());
-        var sidebar = new Grid { Margin = new Thickness(16, 25, 16, 20) };
-        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        sidebar.RowDefinitions.Add(new RowDefinition());
-        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var logo = new Border { Width = 34, Height = 34, CornerRadius = new CornerRadius(10), Background = Brush(Accent), Margin = new Thickness(0, 0, 9, 0), Child = new TextBlock { Text = "C", FontSize = 23, FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
-        sidebar.Children.Add(Row(logo, Column(Text("Controller", 15, true), Text("Hub", 15, true))));
-        var nav = new StackPanel { Margin = new Thickness(0, 42, 0, 0) };
-        var glyphs = new[] { "\uE7FC", "\uE9D9", "\uE765", "\uE9CE", "\uE7C1", "\uE713" };
-        var titles = new[] { "手柄", "震動", "背鍵 / C 鍵", "體感與進階", "遊戲配置", "診斷與設定" };
-        for (int i = 0; i < titles.Length; i++)
+        if (shell.ColumnDefinitions.Count == 0)
         {
-            var title = titles[i]; bool active = page == title;
-            var icon = new TextBlock { Text = glyphs[i], FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 17, Foreground = Brush(active ? Accent : Muted), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 11, 0) };
-            var label = Text(title, 13, active); label.Foreground = Brush(active ? Accent : Muted);
-            var tab = Button("", () => { page = title; note = ""; Draw(); }, id: "nav-" + title);
-            System.Windows.Automation.AutomationProperties.SetName(tab,UiText.Get(title));
-            tab.Content = Row(icon, label); tab.Background = active ? Brush(Selected) : Brushes.Transparent; tab.BorderThickness = new Thickness(0);
-            tab.HorizontalContentAlignment = HorizontalAlignment.Left; tab.Padding = new Thickness(12, 13, 8, 13); tab.Margin = new Thickness(0, 0, 6, 6); nav.Children.Add(tab);
+            shell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            shell.ColumnDefinitions.Add(new ColumnDefinition());
         }
-        Grid.SetRow(nav, 1); sidebar.Children.Add(nav);
-        var bottom = Column(Text("個人工作台", 12, true), Text("Windows 11  /  v0.3.4", 11, muted: true)); Grid.SetRow(bottom, 3); sidebar.Children.Add(bottom);
-        shell.Children.Add(new Border { Background = Brushes.White, BorderBrush = Brush(Line), BorderThickness = new Thickness(0, 0, 1, 0), Child = sidebar });
+        if (shell.Children.Count > 1) shell.Children.RemoveAt(1);
+        if (sidebarLanguage != UiText.Current)
+        {
+            shell.Children.Clear();
+            navItems.Clear();
+            BuildSidebar();
+            sidebarLanguage = UiText.Current;
+        }
+        bool pageChanged = previousTab >= 0 && navItems[previousTab].Title != page;
+        UpdateNavigation();
+
         var main = new Grid { Margin = new Thickness(28, 25, 28, 18) }; main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); main.RowDefinitions.Add(new RowDefinition()); main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); Grid.SetColumn(main, 1); shell.Children.Add(main);
         var header = new Grid { Margin = new Thickness(0, 0, 0, 24) }; header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var titleText = page switch { "手柄" => "Controller Hub", "震動" => "震動與回饋", "背鍵 / C 鍵" => "按鍵映射", _ => page };
         var subText = page switch { "手柄" => "連接你的手柄，設定遊戲中的輸入方式。", "震動" => "調整每一次操作的回饋。", "背鍵 / C 鍵" => "把常用動作，放在順手的位置。", "遊戲配置" => "管理不同遊戲的操作習慣。", _ => "查看連接記錄與應用設定。" };
-        var heading = Text(titleText, 26, true); var subtitle = Text(subText, 13, muted: true); subtitle.Margin = new Thickness(0, 7, 0, 0); header.Children.Add(Column(heading, subtitle));
+        var heading = Text(titleText, 26, true); var subtitle = Text(subText, 13, muted: true); subtitle.Margin = new Thickness(0, 7, 0, 0); if (desktopMode && page!="手柄")
+        {
+            subtitle.Text = string.IsNullOrWhiteSpace(note) || note=="選擇手柄與連接方式。" ? "" : UiText.Get(note);
+            subtitle.Tag="connection-hint";
+        }
+        header.Children.Add(desktopMode && page=="手柄" ? heading : Column(heading, subtitle));
         var badge = headerBadge = new ConnectionBadge(); badge.Update(engine.HasInput,engine.HasOutput,"等待連接"); badge.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(badge, 1); header.Children.Add(badge); main.Children.Add(header);
         UIElement content = page switch { "震動" => RumblePage(), "背鍵 / C 鍵" => MappingPage(), "遊戲配置" => ProfilesPage(), "診斷與設定" => DiagnosticsPage(), "體感與進階" => AdvancedPage(), _ => HomePage() };
         var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(0, 0, 3, 0) }; Grid.SetRow(scroll, 1); main.Children.Add(scroll);
         var footer = new Grid { Margin = new Thickness(0, 16, 0, 0) }; footer.ColumnDefinitions.Add(new ColumnDefinition()); footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        footer.Children.Add(Text(string.IsNullOrEmpty(note) ? "設定保存在本機；修改輸出模式會停止當前連接。" : note, 11, muted: true)); var f = Text("ControllerHub", 10, muted: true); Grid.SetColumn(f, 1); footer.Children.Add(f); Grid.SetRow(footer, 2); main.Children.Add(footer);
+        footer.Children.Add(Text(string.IsNullOrEmpty(note) ? "設定保存在本機；修改輸出模式會停止當前連接。" : note, 11, muted: true)); var f = Text("ControllerHub", 10, muted: true); Grid.SetColumn(f, 1); footer.Children.Add(f); Grid.SetRow(footer, 2);
+        if (!desktopMode && page!="手柄") main.Children.Add(footer);
+
+        if (pageChanged && SystemParameters.ClientAreaAnimation)
+        {
+            var offset = new TranslateTransform(0, 0);
+            scroll.RenderTransform = offset;
+            offset.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(5, 0, TimeSpan.FromMilliseconds(170))
+                { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+            scroll.BeginAnimation(OpacityProperty, new DoubleAnimation(.65, 1, TimeSpan.FromMilliseconds(160)));
+        }
+        PublishDesktop(main);
     }
 
     UIElement HomePage()
@@ -457,7 +519,7 @@ public sealed class MainWindow : Window
         var workspace = new Grid(); workspace.ColumnDefinitions.Add(new ColumnDefinition()); workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
         var device = new Grid { Margin = new Thickness(0, 0, 25, 0) }; device.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); device.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Height <= 760 ? 145 : 250) }); device.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var deviceHeader = new Grid(); deviceHeader.ColumnDefinitions.Add(new ColumnDefinition()); deviceHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var deviceName = Text(preferences.Controller, 23, true); var modelHint = Text(preferences.Controller == "Switch 2 Pro" ? "NINTENDO  /  PRO CONTROLLER" : "SONY  /  DUALSENSE", 10, muted: true); modelHint.Margin = new Thickness(0, 6, 0, 0); deviceHeader.Children.Add(Column(deviceName, modelHint));
+        var deviceName = Text(preferences.Controller, 23, true); var modelHint = Text(preferences.Controller == "Switch 2 Pro" ? "NINTENDO  /  PRO CONTROLLER" : "SONY  /  DUALSENSE", 10, muted: true); modelHint.Margin = new Thickness(0, 6, 0, 0); deviceHeader.Children.Add(desktopMode ? deviceName : Column(deviceName, modelHint));
         var selector = Combo(new[] { "Switch 2 Pro", "PS5 DualSense" }, preferences.Controller, value => { CancelConnection(false); preferences.Controller = value; Save(); Draw(); }); selector.Width = 145; selector.Height = 38;
         // On compact windows the selector moves below the name rather than squeezing it.
         var titleGroup = Column(deviceHeader, selector); selector.HorizontalAlignment = HorizontalAlignment.Left; selector.Margin = new Thickness(0, 13, 0, 0); device.Children.Add(titleGroup);
@@ -470,9 +532,11 @@ public sealed class MainWindow : Window
         stats.Children.Add(Column(Text("輸入頻率",11,muted:true),frequencyText));
         stats.Children.Add(Column(Text("手柄電量",11,muted:true),batteryIndicator));
         stats.Children.Add(Column(Text("裝置狀態",11,muted:true),deviceState)); inputStateText=Text("等待實體按鍵輸入",11,muted:true); inputStateText.Margin=new Thickness(0,12,0,0); Grid.SetRow(stats, 2); device.Children.Add(Column(stats,inputStateText)); Grid.SetRow(device.Children[^1],2); workspace.Children.Add(device);
-        var connectionPanel = new StackPanel { Margin = new Thickness(24, 2, 0, 0) }; connectionPanel.Children.Add(Text("建立連接", 17, true)); var connHint = Text(engine.HasInput && engine.HasOutput ? "手柄已連接，可開始遊戲。" : engine.HasInput ? "實體輸入已連接，可測試按鍵與震動。" : phase=="等待手柄重連" ? "關聯已完成。現在短按 Home 喚醒。" : preferences.Transport == "USB 有線" ? (preferences.Controller=="Switch 2 Pro"?"接上資料線後短按 Home 喚醒，勿按 SYNC。":"接上資料線後短按 PS 喚醒。") : preferences.Controller == "Switch 2 Pro" ? "已關聯請按 Home；首次配對長按 SYNC。" : "先在 Windows 配對；已配對請按 PS 喚醒。", 12, muted: true); connHint.Margin = new Thickness(0, 8, 0, 16); connectionPanel.Children.Add(connHint);
+        var connectionPanel = new StackPanel { Margin = new Thickness(24, 2, 0, 0) }; connectionPanel.Children.Add(Text("建立連接", 17, true)); var connHint = Text(engine.HasInput && engine.HasOutput ? "手柄已連接，可開始遊戲。" : engine.HasInput ? "實體輸入已連接，可測試按鍵與震動。" : phase=="等待手柄重連" ? "關聯已完成。現在短按 Home 喚醒。" : preferences.Transport == "USB 有線" ? (preferences.Controller=="Switch 2 Pro"?"接上資料線後短按 Home 喚醒，勿按 SYNC。":"接上資料線後短按 PS 喚醒。") : preferences.Controller == "Switch 2 Pro" ? "已關聯請按 Home；首次配對長按 SYNC。" : "先在 Windows 配對；已配對請按 PS 喚醒。", 12, muted: true); connHint.Margin = new Thickness(0, 8, 0, 16); if (!string.IsNullOrWhiteSpace(note) && note!="選擇手柄與連接方式。") connHint.Text=UiText.Get(note);
+        connHint.Tag="connection-hint";
+        connectionPanel.Children.Add(connHint);
         var transport = Combo(new[] { "藍牙", "USB 有線" }, preferences.Transport, value => { CancelConnection(false); preferences.Transport = value; Save(); Draw(); }); transport.IsEnabled = connection == null; Space(transport, 22); connectionPanel.Children.Add(transport);
-        var steps = new[] { "搜尋裝置", "建立連線", "初始化輸入" }; if (Height <= 760) { var compactSteps = Text("搜尋 → 連線 → 初始化", 12, muted: true); Space(compactSteps, 15); connectionPanel.Children.Add(compactSteps); } else for (int i = 0; i < steps.Length; i++) { bool active = phase == steps[i] || connected; var dot = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(11), Background = Brush(connected ? ConnectionBadge.Emerald : active ? Accent : Color.FromRgb(241, 243, 248)), Margin = new Thickness(0, 0, 10, 0), Child = new TextBlock { Text = connected ? "✓" : (i + 1).ToString(), Foreground = active ? Brushes.White : Brush(Muted), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 11 } }; var line = Row(dot, Text(steps[i], 12, active)); Space(line, 13); connectionPanel.Children.Add(line); }
+        connectionPanel.Children.Add(BuildConnectionSteps());
         var status = connectionBadge = new ConnectionBadge(); status.Update(engine.HasInput,engine.HasOutput,phase); status.HorizontalAlignment = HorizontalAlignment.Left; status.Margin = new Thickness(0, 8, 0, 17); connectionPanel.Children.Add(status);
         connectionPanel.Children.Add(Button(connection != null ? "取消 / 中斷連接" : "連接手柄  →", () => { if (connection != null) { CancelConnection(true); Draw(); } else _ = ConnectReal(); }, true, "connect"));
         var inputOnly=Button("僅測試實體輸入",()=>{ if(connection==null) _=ConnectReal(true); }); inputOnly.Margin=new Thickness(0,8,0,0); connectionPanel.Children.Add(inputOnly);
@@ -484,7 +548,7 @@ public sealed class MainWindow : Window
         {
             bool selected = preferences.Output == name; var title = Text(name, 15, true); title.Foreground = Brush(selected ? Accent : Ink);
             var detail = Text(descriptions[name], 11, muted: true); detail.Margin = new Thickness(0, 7, 0, 0); var label = Column(title, detail);
-            var b = Button("", () => { if(preferences.Output!=name) CancelConnection(false); preferences.Output = name; Save(); Draw(); }, id: "mode-" + name); b.Content = label; b.HorizontalContentAlignment = HorizontalAlignment.Left; b.Padding = new Thickness(16, 17, 12, 17); b.MinHeight = 84; b.Margin = new Thickness(0, 0, name == "PS5" ? 0 : 9, 0); b.BorderBrush = Brush(selected ? Accent : Line); b.Background = selected ? Brush(Selected) : Brushes.White; modes.Children.Add(b);
+            var b = Button("", () => { if(preferences.Output!=name) CancelConnection(false); preferences.Output = name; Save(); Draw(); }, id: "mode-" + name); b.Content = label; b.HorizontalContentAlignment = HorizontalAlignment.Left; b.Padding = new Thickness(16, 17, 12, 17); b.MinHeight = 84; b.Margin = new Thickness(0, 0, name == "PS5" ? 0 : 9, 0); StyleChoice(b, selected); modes.Children.Add(b);
         }
         if(args.Contains("--manual-latency"))
         {
@@ -503,7 +567,49 @@ public sealed class MainWindow : Window
             },true,id:"trigger-latency");latency.IsEnabled=engine.HasOutput && !gameHapticsTesting;
             latency.Margin=new Thickness(0,12,0,12);root.Children.Add(latency);
         }
-        root.Children.Add(modes); var current = Text($"{preferences.Controller}   →   {preferences.Output}   ·   設定保存在本機", 11, muted: true); current.Margin = new Thickness(0, 14, 0, 0); root.Children.Add(current); return root;
+        root.Children.Add(modes); var current = Text($"{preferences.Controller}   →   {preferences.Output}   ·   設定保存在本機", 11, muted: true); current.Margin = new Thickness(0, 14, 0, 0); if(!desktopMode) root.Children.Add(current); return root;
+    }
+
+    int confirmedSteps;
+    bool testingInputOnly;
+    void UpdateConnectionSteps(EngineStatus status)
+    {
+        confirmedSteps = status.Phase switch {
+            "已找到手柄" => 1,
+            "輸入已就緒" or "輸入測試中" => 2,
+            "遊戲輸出已就緒" => 3,
+            "連接未完成" when confirmedSteps >= 2 && !status.InputReady => 1,
+            "連接未完成" => Math.Min(confirmedSteps, 2),
+            "準備連接" or "已停止" or "等待重新連接" or "切換 USB" or "釋放未完成" => 0,
+            _ => confirmedSteps
+        };
+    }
+
+    sealed record ConnectionStep(string State,string Label,string Symbol);
+    StackPanel BuildConnectionSteps()
+    {
+        bool idle = phase is "尚未連接" or "已停止" or "正在中斷" or "等待重新連接" or "切換 USB" or "釋放未完成";
+        int done = idle ? 0 : confirmedSteps;
+        string[] pending = { "搜尋手柄", "接收實體輸入", "建立遊戲輸出" };
+        string[] complete = { "已找到手柄", "實體輸入就緒", "遊戲輸出就緒" };
+        string[] failures = { "搜尋手柄未完成", "實體輸入未就緒", "遊戲輸出未就緒" };
+        var steps = new List<ConnectionStep>();
+        var panel = new StackPanel();
+        for(int i=0;i<3;i++)
+        {
+            bool skipped=i==2 && testingInputOnly && !idle;
+            string state=skipped ? "skipped" : i<done ? "done" : i!=done || idle ? "pending"
+                : phase=="連接未完成" ? "error" : connection!=null ? "active" : "pending";
+            string label=UiText.Get(state switch { "skipped"=>"本次略過遊戲輸出", "error"=>failures[i], "done"=>complete[i], _=>pending[i] });
+            string symbol=state switch { "done"=>"✓", "error"=>"!", "skipped"=>"–", _=>(i+1).ToString() };
+            steps.Add(new(state,label,symbol));
+            var color= state switch { "done"=>ConnectionBadge.Emerald, "active"=>Accent, "error"=>Color.FromRgb(158,67,10), _=>Muted };
+            var dot=new Border {Width=20,Height=20,CornerRadius=new CornerRadius(10),Background=Brush(color),
+                Child=new TextBlock {Text=symbol,Foreground=Brushes.White,HorizontalAlignment=HorizontalAlignment.Center},Margin=new Thickness(0,0,8,0)};
+            var row=Row(dot,new TextBlock {Text=label,VerticalAlignment=VerticalAlignment.Center});row.Height=29;
+            panel.Children.Add(row);
+        }
+        panel.Tag=steps;return panel;
     }
 
     async Task ConnectReal(bool inputOnly=false)
@@ -512,6 +618,7 @@ public sealed class MainWindow : Window
         if(connection!=null) return;
         try { Validate(preferences); } catch(Exception ex) { note=ex.Message; Draw(); return; }
         lock(observedGate) observedKeys.Clear();
+        testingInputOnly=inputOnly; confirmedSteps=0;
         var source=new CancellationTokenSource(); connection=source;
         try { await engine.Run(ProfileStore.Copy(preferences),source.Token,inputOnly); }
         finally { if(ReferenceEquals(connection,source)) connection=null; source.Dispose(); connected=false; if(!closing)Draw(); }
@@ -578,7 +685,7 @@ public sealed class MainWindow : Window
         var grid = new Grid(); grid.ColumnDefinitions.Add(new()); grid.ColumnDefinitions.Add(new() { Width = new GridLength(270) });
         var left = new StackPanel(); left.Children.Add(Text("Switch 2 Pro", 22, true)); var caption = Text("先選按鍵，再設定它在遊戲中的動作。", 13, muted: true); caption.Margin = new Thickness(0, 8, 0, 10); left.Children.Add(caption);
         left.Children.Add(new ControllerDrawing(false) { Height = 280, Rear = true });
-        var keys = new UniformGrid { Columns = 3 }; foreach (var key in new[] { "GL", "GR", "C" }) { var b = Button(key == "C" ? "C 鍵" : key + " 背鍵", () => { selectedKey = key; Draw(); }, id: "key-" + key); b.Margin = new Thickness(0, 0, 8, 0); b.Background = selectedKey == key ? Brush(Selected) : Brushes.White; keys.Children.Add(b); } left.Children.Add(keys);
+        var keys = new UniformGrid { Columns = 3 }; foreach (var key in new[] { "GL", "GR", "C" }) { var b = Button(key == "C" ? "C 鍵" : key + " 背鍵", () => { selectedKey = key; Draw(); }, id: "key-" + key); b.Margin = new Thickness(0, 0, 8, 0); StyleChoice(b, selectedKey == key); keys.Children.Add(b); } left.Children.Add(keys);
         var summary = Text($"GL → {preferences.GL}      GR → {preferences.GR}      C → {preferences.C}", 14, true); summary.Margin = new Thickness(0, 24, 0, 5); left.Children.Add(summary); left.Children.Add(Text("這是按鍵位置示意，不代表已寫入手柄。", 12, muted: true)); var lc = Card(left); lc.Margin = new Thickness(0, 0, 16, 0); grid.Children.Add(lc);
         string selected = selectedKey == "GL" ? preferences.GL : selectedKey == "GR" ? preferences.GR : preferences.C;
         var editor = Column(Text(selectedKey == "C" ? "C 鍵設定" : selectedKey + " 背鍵設定", 18, true)); var label = Text("映射至", 13, muted: true); label.Margin = new Thickness(0, 24, 0, 8); editor.Children.Add(label);
@@ -593,6 +700,19 @@ public sealed class MainWindow : Window
         var box=new CheckBox {Content=UiText.Get(label),IsChecked=initial,Margin=new Thickness(0,10,0,10),FontSize=14};
         box.Checked+=(_,_)=>change(true); box.Unchecked+=(_,_)=>change(false); return box;
     }
+    Input.FusionAudioSource[]? audioSources;
+    bool loadingAudioSources;
+    string? audioSourceError;
+    DateTime nextAudioEnumeration;
+    async Task LoadAudioSources()
+    {
+        loadingAudioSources = true;
+        try { audioSources = await Task.Run(Input.FusionInput.AudioSources); audioSourceError=null; }
+        catch(Exception ex) { audioSourceError=ex.Message; }
+        finally { loadingAudioSources=false; nextAudioEnumeration=DateTime.UtcNow.AddSeconds(5); }
+        if(!closing && page=="體感與進階") Draw();
+    }
+
     UIElement AdvancedPage()
     {
         var root=new StackPanel();
@@ -612,12 +732,14 @@ public sealed class MainWindow : Window
         var bcard=Card(feedback);Space(bcard);root.Children.Add(bcard);
         var audio=Column(Text("音訊轉震動",20,true));
         audio.Children.Add(Text("使用系統播放音訊合成觸覺；只在開啟後開始擷取，不保存音訊。",13,muted:true));
-        try {
-            var sources=Input.FusionInput.AudioSources();
+        if(!loadingAudioSources && DateTime.UtcNow>=nextAudioEnumeration) _=LoadAudioSources();
+        if(audioSources is {} sources)
+        {
             var choices=new[]{"系統預設播放裝置"}.Concat(sources.Select((x,i)=>$"{i+1}. {x.Name}")).ToArray();
             int selected=Array.FindIndex(sources,x=>x.Id==preferences.AudioEndpointId)+1;
             audio.Children.Add(Combo(choices,choices[selected],async name=> {var i=Array.IndexOf(choices,name);preferences.AudioEndpointId=i>0?sources[i-1].Id:"";Save();try {await Task.Run(engine.RefreshAudio);}catch(Exception e){note=e.Message;}Draw();}));
-        } catch(Exception e) {audio.Children.Add(Text("音訊來源無法列舉："+e.Message,12,muted:true));}
+        }
+        if(audioSourceError!=null)audio.Children.Add(Text("音訊來源無法列舉："+audioSourceError,12,muted:true));
         audio.Children.Add(Toggle("啟用系統音訊轉震動",preferences.AudioHaptics,async v=>{preferences.AudioHaptics=v;Save();try {await Task.Run(engine.RefreshAudio);}catch(Exception e){note=e.Message;}Draw();}));
         audio.Children.Add(Toggle("取代遊戲觸覺（關閉則混合）",preferences.AudioReplace,async v=>{preferences.AudioReplace=v;Save();try {await Task.Run(engine.RefreshAudio);}catch(Exception e){note=e.Message;}}));
         audio.Children.Add(Button("播放固定低音測試（1 秒）",async ()=> {try {await engine.TestAudio();note="低音測試結束，請確認是否有震動。";}catch(Exception e){note=e.Message;}Draw();}));
@@ -655,15 +777,16 @@ public sealed class MainWindow : Window
             var row = new Grid(); row.ColumnDefinitions.Add(new()); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); var stored=savedProfiles.First(s=>s.Name==p); row.Children.Add(Column(Text(p, 17, true), Text($"{stored.Settings.Controller} → {stored.Settings.Output} · GL {stored.Settings.GL} / GR {stored.Settings.GR}", 13, muted: true)));
             var b = Button(selectedProfile == p ? "重新套用" : "套用配置", () => { CancelConnection(false); selectedProfile = p; var auto=preferences.AutoProfiles; var language=preferences.Language; preferences=ProfileStore.Copy(stored.Settings); preferences.Language=language; preferences.AutoProfiles=auto; if(automaticProfile!=null)beforeGame=null; Save(); note="已套用「"+p+"」。請重新連接手柄。"; Draw(); }, selectedProfile == p, "profile-" + p); Grid.SetColumn(b, 1); row.Children.Add(b); var card = Card(row); Space(card); root.Children.Add(card);
         }
+        var tools = new StackPanel();
         var bindings=Row(Button("綁定遊戲 EXE…",()=> {
             var dialog=new Microsoft.Win32.OpenFileDialog {Filter=UiText.Get("遊戲程式|*.exe")};
             if(dialog.ShowDialog(this)==true && selectedProfile!=null) {var i=savedProfiles.FindIndex(p=>p.Name==selectedProfile);if(i>=0){savedProfiles[i]=savedProfiles[i] with {ExecutablePath=dialog.FileName};profileStore.Save(savedProfiles);note="已綁定 "+Path.GetFileName(dialog.FileName);Draw();}}
         }),Button("解除遊戲綁定",()=> {var i=savedProfiles.FindIndex(p=>p.Name==selectedProfile);if(i>=0){savedProfiles[i]=savedProfiles[i] with {ExecutablePath=null};profileStore.Save(savedProfiles);note="已解除綁定。";Draw();}}),Button("刪除配置",()=> {if(savedProfiles.Count<=1){note="至少保留一個配置。";Draw();return;}savedProfiles.RemoveAll(p=>p.Name==selectedProfile);profileStore.Save(savedProfiles);profiles.Clear();profiles.AddRange(savedProfiles.Select(p=>p.Name));selectedProfile=profiles[0];Draw();}));
-        bindings.Margin=new Thickness(0,8,0,8);root.Children.Add(bindings);
-        if(savedProfiles.FirstOrDefault(p=>p.Name==selectedProfile)?.ExecutablePath is {} game) root.Children.Add(Text("綁定遊戲："+Path.GetFileName(game),12,muted:true));
-        var name=new TextBox { Text=selectedProfile??UiText.Get("新配置"),Padding=new Thickness(10),Margin=new Thickness(0,8,0,8) }; root.Children.Add(name);
-        root.Children.Add(Button("將目前設定儲存為此配置",()=> { try { var n=name.Text.Trim(); if(n.Length==0 || n.Length>60) throw new Exception("配置名稱請輸入 1 至 60 個字。"); var old=savedProfiles.FirstOrDefault(p=>p.Name==n); savedProfiles.RemoveAll(p=>p.Name==n); savedProfiles.Add(new(n,ProfileStore.Copy(preferences),old?.ExecutablePath)); profileStore.Save(savedProfiles); profiles.Clear(); profiles.AddRange(savedProfiles.Select(p=>p.Name)); selectedProfile=n; note="配置已儲存。"; } catch(Exception e) { note=e.Message; } Draw(); },true));
-        var actions=Row(Button("匯出目前設定…",()=> { var d=new Microsoft.Win32.SaveFileDialog {FileName="controller-profile.json",Filter=UiText.Get("配置|*.json")}; if(d.ShowDialog(this)==true) { try { File.WriteAllText(d.FileName,JsonSerializer.Serialize(preferences,new JsonSerializerOptions {WriteIndented=true})); } catch(Exception e) {note=e.Message;} } }),Button("匯入設定…",()=> { var d=new Microsoft.Win32.OpenFileDialog {Filter=UiText.Get("配置|*.json")}; if(d.ShowDialog(this)==true) { try { var p=JsonSerializer.Deserialize<Preferences>(File.ReadAllText(d.FileName)) ?? throw new Exception("配置內容無效。"); Validate(p); CancelConnection(false); p.Language=preferences.Language; preferences=p; Save(); } catch(Exception e) {note=e.Message;} Draw(); } })); actions.Margin=new Thickness(0,12,0,0); root.Children.Add(actions); return root;
+        bindings.Margin=new Thickness(0,8,0,8);tools.Children.Add(bindings);
+        if(savedProfiles.FirstOrDefault(p=>p.Name==selectedProfile)?.ExecutablePath is {} game) tools.Children.Add(Text("綁定遊戲："+Path.GetFileName(game),12,muted:true));
+        var name=new TextBox { Text=selectedProfile??UiText.Get("新配置"),Padding=new Thickness(10),Margin=new Thickness(0,8,0,8) }; tools.Children.Add(name);
+        tools.Children.Add(Button("將目前設定儲存為此配置",()=> { try { var n=name.Text.Trim(); if(n.Length==0 || n.Length>60) throw new Exception("配置名稱請輸入 1 至 60 個字。"); var old=savedProfiles.FirstOrDefault(p=>p.Name==n); savedProfiles.RemoveAll(p=>p.Name==n); savedProfiles.Add(new(n,ProfileStore.Copy(preferences),old?.ExecutablePath)); profileStore.Save(savedProfiles); profiles.Clear(); profiles.AddRange(savedProfiles.Select(p=>p.Name)); selectedProfile=n; note="配置已儲存。"; } catch(Exception e) { note=e.Message; } Draw(); },true));
+        var actions=Row(Button("匯出目前設定…",()=> { var d=new Microsoft.Win32.SaveFileDialog {FileName="controller-profile.json",Filter=UiText.Get("配置|*.json")}; if(d.ShowDialog(this)==true) { try { File.WriteAllText(d.FileName,JsonSerializer.Serialize(preferences,new JsonSerializerOptions {WriteIndented=true})); } catch(Exception e) {note=e.Message;} } }),Button("匯入設定…",()=> { var d=new Microsoft.Win32.OpenFileDialog {Filter=UiText.Get("配置|*.json")}; if(d.ShowDialog(this)==true) { try { var p=JsonSerializer.Deserialize<Preferences>(File.ReadAllText(d.FileName)) ?? throw new Exception("配置內容無效。"); Validate(p); CancelConnection(false); p.Language=preferences.Language; preferences=p; Save(); } catch(Exception e) {note=e.Message;} Draw(); } })); actions.Margin=new Thickness(0,12,0,0); tools.Children.Add(actions); root.Children.Add(Card(tools)); return root;
     }
 
     async Task ObserveGameProfile()
@@ -755,7 +878,9 @@ public sealed class MainWindow : Window
     }
     async Task Smoke(string output)
     {
-        Directory.CreateDirectory(output); await Settle(); Capture(Path.Combine(output, "01-home.png"));
+        Directory.CreateDirectory(output); await Settle();
+        if (UiText.Current != "en") throw new Exception("First launch should use English.");
+        Capture(Path.Combine(output, "01-home.png"));
         Click("mode-PS5"); if (preferences.Output != "PS5") throw new Exception("Output selection failed");
         Click("connect"); Click("connect"); await Task.Delay(90); if (connected || connection != null) throw new Exception("Cancellation failed");
         preferences.SimulateFailure = true; await ConnectDemo(); if (phase != "演示連接失敗") throw new Exception("Failure route failed"); await Settle(); Capture(Path.Combine(output, "02-failure.png"));
@@ -828,6 +953,7 @@ public sealed class MainWindow : Window
 
 public sealed class ControllerDrawing : FrameworkElement
 {
+    internal bool IsDualSense => dualSense;
     readonly bool dualSense;
     static readonly BitmapSource DualSenseImage = LoadDualSense();
     public bool Rear { get; set; }

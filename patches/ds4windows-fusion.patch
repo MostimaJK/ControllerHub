@@ -205,6 +205,30 @@ index 32f56da..6e42e1e 100644
              if ((uint)ind < (uint)DS4Controllers.Length)
              {
                  OutContType normalizedOutput = activeOutDevType[ind].Normalize();
+diff --git a/DS4Windows/DS4Control/DualSenseBluetoothSpeakerPassthrough.cs b/DS4Windows/DS4Control/DualSenseBluetoothSpeakerPassthrough.cs
+index 7cf6721..d91b516 100644
+--- a/DS4Windows/DS4Control/DualSenseBluetoothSpeakerPassthrough.cs
++++ b/DS4Windows/DS4Control/DualSenseBluetoothSpeakerPassthrough.cs
+@@ -2961,7 +2961,6 @@ namespace DS4Windows
+                         $"speakerWriteFailures={device.BluetoothCombinedSpeakerWriteFailures} " +
+                         $"hapticsPairedWrites={device.BluetoothCombinedHapticsPairedWrites} " +
+                         $"speakerFallbackWrites={device.BluetoothCombinedSpeakerFallbackWrites} " +
+-                        $"staleHapticsSilenced={device.BluetoothCombinedSpeakerStaleHapticsSilenced} " +
+                         $"status={device.LastBluetoothHapticsWriteStatus}",
+                         false);
+                 }
+diff --git a/DS4Windows/DS4Control/Mapping.cs b/DS4Windows/DS4Control/Mapping.cs
+index 680dc0c..ff01141 100644
+--- a/DS4Windows/DS4Control/Mapping.cs
++++ b/DS4Windows/DS4Control/Mapping.cs
+@@ -1253,7 +1253,6 @@ namespace DS4Windows
+             65, // DS4Controls.Switch2JoyConRightSL
+             66, // DS4Controls.Switch2JoyConRightSR
+         };
+-        private static int macroEndIndex = DS4_CONTROL_MACRO_ARRAY_LEN - 1;
+ 
+         // Special macros
+         static bool altTabDone = true;
 diff --git a/DS4Windows/DS4Control/ProfileFeatureSettings.cs b/DS4Windows/DS4Control/ProfileFeatureSettings.cs
 index 29f6965..859bdc0 100644
 --- a/DS4Windows/DS4Control/ProfileFeatureSettings.cs
@@ -240,7 +264,7 @@ index 29f6965..859bdc0 100644
              Mode == AudioHapticsMode.Mix && GainPercent == DefaultGainPercent &&
              BassFocus == AudioHapticsBassFocus.Balanced &&
 diff --git a/DS4Windows/DS4Control/ScpUtil.cs b/DS4Windows/DS4Control/ScpUtil.cs
-index edc9145..7c7003f 100644
+index edc9145..b74f7fe 100644
 --- a/DS4Windows/DS4Control/ScpUtil.cs
 +++ b/DS4Windows/DS4Control/ScpUtil.cs
 @@ -2467,7 +2467,7 @@ namespace DS4Windows
@@ -252,6 +276,15 @@ index edc9145..7c7003f 100644
          }
  
          public static int ProcessPriority
+@@ -9445,7 +9445,7 @@ namespace DS4Windows
+ 
+                     PostProcessLoad();
+                 }
+-                catch (InvalidOperationException e)
++                catch (InvalidOperationException)
+                 {
+                     AppLogger.LogToGui("Failed to load Profiles.xml.", false);
+                     loaded = false;
 diff --git a/DS4Windows/DS4Control/Switch2/Switch2AudioHapticsLifetime.cs b/DS4Windows/DS4Control/Switch2/Switch2AudioHapticsLifetime.cs
 index bc52dde..a1b2694 100644
 --- a/DS4Windows/DS4Control/Switch2/Switch2AudioHapticsLifetime.cs
@@ -355,6 +388,28 @@ index bc52dde..a1b2694 100644
                  return WakeAfterRumblePublication(Switch2AudioHapticsLifetime.Withdraw(pump, sink, lane, nowMicroseconds));
              }
              finally { Volatile.Write(ref operationActive, 0); }
+diff --git a/DS4Windows/DS4Control/Switch2/Switch2BluetoothThroughputPreference.cs b/DS4Windows/DS4Control/Switch2/Switch2BluetoothThroughputPreference.cs
+index 0d6c923..a7e70e2 100644
+--- a/DS4Windows/DS4Control/Switch2/Switch2BluetoothThroughputPreference.cs
++++ b/DS4Windows/DS4Control/Switch2/Switch2BluetoothThroughputPreference.cs
+@@ -71,7 +71,7 @@ internal sealed class Switch2BluetoothThroughputPreference : IDisposable
+         {
+             unknown = AcquireNativeReference(device);
+             Guid device6Id = Device6Interface;
+-            if (Marshal.QueryInterface(unknown, ref device6Id, out device6) < 0 ||
++            if (Marshal.QueryInterface(unknown, in device6Id, out device6) < 0 ||
+                 device6 == 0)
+             {
+                 return false;
+@@ -159,7 +159,7 @@ internal sealed class Switch2BluetoothThroughputPreference : IDisposable
+         try
+         {
+             Guid closableId = ClosableInterface;
+-            if (Marshal.QueryInterface(detached, ref closableId,
++            if (Marshal.QueryInterface(detached, in closableId,
+                     out closable) >= 0 && closable != 0)
+             {
+                 GetHResultDelegate close = GetVtableDelegate<
 diff --git a/DS4Windows/DS4Control/Switch2/Switch2BluetoothWindowsAdapter.cs b/DS4Windows/DS4Control/Switch2/Switch2BluetoothWindowsAdapter.cs
 index 6b98c16..81fd80a 100644
 --- a/DS4Windows/DS4Control/Switch2/Switch2BluetoothWindowsAdapter.cs
@@ -767,8 +822,67 @@ index e90c494..4755b18 100644
  using MessageBox = System.Windows.MessageBox;
  using MouseEventArgs = System.Windows.Input.MouseEventArgs;
  using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
+diff --git a/DS4Windows/DS4Forms/ViewModels/CurrentOutDeviceViewModel.cs b/DS4Windows/DS4Forms/ViewModels/CurrentOutDeviceViewModel.cs
+index 51f851d..c0e424e 100644
+--- a/DS4Windows/DS4Forms/ViewModels/CurrentOutDeviceViewModel.cs
++++ b/DS4Windows/DS4Forms/ViewModels/CurrentOutDeviceViewModel.cs
+@@ -474,6 +474,7 @@ namespace DS4WinWPF.DS4Forms.ViewModels
+             BoundInputChanged?.Invoke(this, EventArgs.Empty);
+             XInputSlotNumChanged?.Invoke(this, EventArgs.Empty);
+             DisplayXInputSlotNumChanged?.Invoke(this, EventArgs.Empty);
++            InputSlotNumChanged?.Invoke(this, EventArgs.Empty);
+             InputSlotDisplayStringChanged?.Invoke(this, EventArgs.Empty);
+             Dirty = false;
+         }
+diff --git a/DS4Windows/DS4Forms/ViewModels/TrayIconViewModel.cs b/DS4Windows/DS4Forms/ViewModels/TrayIconViewModel.cs
+index 3e039e4..3918985 100644
+--- a/DS4Windows/DS4Forms/ViewModels/TrayIconViewModel.cs
++++ b/DS4Windows/DS4Forms/ViewModels/TrayIconViewModel.cs
+@@ -39,7 +39,6 @@ namespace DS4WinWPF.DS4Forms.ViewModels
+         private MenuItem minimizeItem;
+         private MenuItem openProgramItem;
+         private MenuItem closeItem;
+-        private int? prevBattery = null;
+         private bool disposed;
+ 
+ 
+diff --git a/DS4Windows/DS4Library/DS4Device.cs b/DS4Windows/DS4Library/DS4Device.cs
+index aa88a7b..b668b61 100644
+--- a/DS4Windows/DS4Library/DS4Device.cs
++++ b/DS4Windows/DS4Library/DS4Device.cs
+@@ -1766,7 +1766,6 @@ namespace DS4Windows
+ 
+         private readonly Stopwatch rumbleAutostopTimer = new Stopwatch(); // Autostop timer to stop rumble motors if those are stuck in a rumble state
+ 
+-        private byte outputPendCount = 0;
+         private const int OUTPUT_MIN_COUNT_BT = 3;
+         private byte[] outputBTCrc32Head = new byte[] { 0xA2 };
+         protected readonly Stopwatch standbySw = new Stopwatch();
+diff --git a/DS4Windows/DS4Library/InputDevices/DualSenseDevice.cs b/DS4Windows/DS4Library/InputDevices/DualSenseDevice.cs
+index 3a397cc..8b6d9b4 100644
+--- a/DS4Windows/DS4Library/InputDevices/DualSenseDevice.cs
++++ b/DS4Windows/DS4Library/InputDevices/DualSenseDevice.cs
+@@ -806,7 +806,6 @@ namespace DS4Windows.InputDevices
+         private long bluetoothSpeakerFramesDropped;
+         private long bluetoothCombinedSpeakerReportsWritten;
+         private long bluetoothCombinedSpeakerWriteFailures;
+-        private long bluetoothCombinedSpeakerStaleHapticsSilenced;
+         private readonly object bluetoothSpeakerClockClaimLock = new object();
+         private long bluetoothSpeakerClockLeaseExpiryTimestamp;
+         private long bluetoothSpeakerClockActiveClaim;
+@@ -1039,8 +1038,8 @@ namespace DS4Windows.InputDevices
+                 }
+             }
+         }
+-        public long BluetoothCombinedSpeakerStaleHapticsSilenced =>
+-            Interlocked.Read(ref bluetoothCombinedSpeakerStaleHapticsSilenced);
++        // Legacy diagnostic property retained for existing callers; this path has no counter.
++        public long BluetoothCombinedSpeakerStaleHapticsSilenced => 0;
+         public long BluetoothCombinedHapticsPairedWrites =>
+             Interlocked.Read(ref bluetoothCombinedHapticsPairedWrites);
+         public long BluetoothCombinedSpeakerFallbackWrites =>
 diff --git a/DS4Windows/DS4WinWPF.csproj b/DS4Windows/DS4WinWPF.csproj
-index f7db86b..3f309c3 100644
+index f7db86b..a7af41b 100644
 --- a/DS4Windows/DS4WinWPF.csproj
 +++ b/DS4Windows/DS4WinWPF.csproj
 @@ -2,7 +2,7 @@
@@ -792,6 +906,34 @@ index f7db86b..3f309c3 100644
  		<Compile Include="..\installer\StartupSetupState.cs" Link="StartupSetupState.cs" />
  		<None Remove="libs\x64\**" Condition="'$(Platform)' != 'x64'" />
  		<None Remove="libs\x86\**" Condition="'$(Platform)' != 'x86'" />
+@@ -259,7 +264,6 @@
+ 		<PackageReference Include="YellowDogMan.RRNoise.NET" Version="0.1.9" GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="all" />
+ 		<PackageReference Include="Ookii.Dialogs.Wpf" Version="5.0.1" />
+ 		<PackageReference Include="System.Management" Version="7.0.2" />
+-		<PackageReference Include="System.Memory" Version="4.5.5" />
+ 		<PackageReference Include="TaskScheduler" Version="2.10.1" />
+ 		<PackageReference Include="WPFLocalizeExtension" Version="3.9.4" />
+ 		<PackageReference Include="WpfScreenHelper" Version="2.1.0" />
+diff --git a/DS4Windows/Translations/Strings.ru.resx b/DS4Windows/Translations/Strings.ru.resx
+index 4734d5d..8f5289d 100644
+--- a/DS4Windows/Translations/Strings.ru.resx
++++ b/DS4Windows/Translations/Strings.ru.resx
+@@ -629,15 +629,6 @@
+   <data name="Utils" xml:space="preserve">
+     <value>Утилиты</value>
+   </data>
+-  <data name="Program" xml:space="preserve">
+-    <value>Программа</value>
+-  </data>
+-  <data name="RunAs" xml:space="preserve">
+-    <value>Запустить как</value>
+-  </data>
+-  <data name="Task" xml:space="preserve">
+-    <value>Задача</value>
+-  </data>
+   <data name="GyroTriggerJitterCompensationTooltip" xml:space="preserve">
+     <value>Добавьте дополнительное регулирование на нижнем конце кривой, чтобы учесть тряску устройства.</value>
+   </data>
 diff --git a/DS4WindowsTests/DS4WindowsTests.csproj b/DS4WindowsTests/DS4WindowsTests.csproj
 index 468945b..2f569a2 100644
 --- a/DS4WindowsTests/DS4WindowsTests.csproj

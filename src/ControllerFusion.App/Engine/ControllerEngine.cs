@@ -141,7 +141,7 @@ public sealed class ControllerEngine : IAsyncDisposable
                 var model=p.Controller=="Switch 2 Pro"?"Switch2Pro":"DualSense";
                 var matches=input.Devices().Where(d=>d.Model==model && d.Transport==p.Transport).ToArray();
                 if(matches.Length>1) throw new IOException("找到多個同型號手柄，請暫時只保留一個，再連接。");
-                if(matches.Length==1) { if(selectedSlot!=matches[0].Slot)readiness.Reset();Volatile.Write(ref selectedSlot,matches[0].Slot); Battery=matches[0].Battery; if(HasInput && readiness.IsReady(Stopwatch.GetTimestamp())) break; }
+                if(matches.Length==1) { if(selectedSlot!=matches[0].Slot) { readiness.Reset(); Set("已找到手柄","正在等待有效輸入。"); }Volatile.Write(ref selectedSlot,matches[0].Slot); Battery=matches[0].Battery; if(HasInput && readiness.IsReady(Stopwatch.GetTimestamp())) break; }
                 if(p.Controller=="Switch 2 Pro" && p.Transport=="藍牙" && !paired)
                 {
                     var candidates=Candidates;

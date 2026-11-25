@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>$(ControllerHubTargetFramework)</TargetFramework>
@@ -11,7 +11,7 @@
     <RootNamespace>ControllerFusion</RootNamespace>
     <Product>ControllerHub</Product>
     <Description>Switch 2 Pro and DualSense controller workspace for Windows</Description>
-    <Version>0.3.4</Version>
+    <Version>1.0.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -27,6 +27,14 @@
     <Compile Include="..\..\upstream\PRO2\source\final-three-in-one\windows\v60_viiper_app\ViiperProtocolClient.cs" Link="Engine\ViiperProtocolClient.cs" />
     <None Update="Assets\NS2ProCon-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Update="Assets\ARTWORK-NOTICE.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Assets/DualSense.png" TargetPath="Web/DualSense.png" CopyToOutputDirectory="PreserveNewest" />
+    <Resource Include="app.ico" />
+    <Resource Include="../../desktop/icons/*.png" Link="Icons/%(Filename)%(Extension)" />
+    <Content Include="../../desktop/icons/*.svg;../../desktop/icons/LICENSE.txt" Link="Web/icons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../desktop/pro-front.png;../../desktop/pro-rear.png;../../desktop/index.html;../../desktop/shell.css;../../desktop/shell.js;../../desktop/webview.js" Link="Web/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3537.50" />
   </ItemGroup>
   <Target Name="ExcludeOriginalAppInstallers" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>

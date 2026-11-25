@@ -19,7 +19,7 @@ SDK 版本由 `global.json` 固定為 10.0.403（允許同功能帶的後續修�
 ./scripts/bootstrap.ps1 -VerifyOnly
 ```
 
-產物：`dist/ControllerHub.exe`、完整相依檔案、`releases/latest/ControllerHub-v0.3.0-preview-win-x64.zip` 及 `.sha256`。EXE 依賴 .NET Desktop Runtime，並非單檔自包含應用程式。
+產物：`dist/ControllerHub.exe`、完整相依檔案、`releases/latest/ControllerHub-v1.0.0-win-x64.zip` 及 `.sha256`。EXE 依賴 .NET Desktop Runtime，並非單檔自包含應用程式。
 
 ## 目錄
 

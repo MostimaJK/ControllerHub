@@ -1,4 +1,11 @@
-﻿# Changelog
+# Changelog
+
+## 1.0.0 · 2026-11-26
+
+ControllerHub now opens in English on first launch and remembers your language selection. See the [English and Traditional Chinese release notes](RELEASE_NOTES.md).
+
+- 新增 WebView2 主介面、三階段連接狀態、Lucide 圖示和三語設定頁。保留原生 WPF 及 Electron 原始碼入口。
+
 
 ## 0.3.4 Preview — 2026-11-01
 

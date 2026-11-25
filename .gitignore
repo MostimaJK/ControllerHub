@@ -26,3 +26,6 @@ preferences.json
 TestResults/
 .DS_Store
 Thumbs.db
+
+node_modules/
+captures/

@@ -15,8 +15,9 @@ public static class UiText
     static readonly Dictionary<string, string> characters = Load("zh-Hans-characters");
     static readonly Dictionary<char, string[]> phrases = english.Keys
         .GroupBy(k => k[0]).ToDictionary(g => g.Key, g => g.OrderByDescending(k => k.Length).ToArray());
-    public static string Current { get; private set; } = "zh-Hant";
-    public static string Normalize(string? language) => Languages.Contains(language) ? language! : "zh-Hant";
+    public const string DefaultLanguage = "en";
+    public static string Current { get; private set; } = DefaultLanguage;
+    public static string Normalize(string? language) => Languages.Contains(language) ? language! : DefaultLanguage;
     public static void Use(string? language) => Current = Normalize(language);
     public static FontFamily EnglishFont { get; } = new(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Google Sans");
     public static FontFamily Font => Current == "en" ? EnglishFont : new FontFamily(Current == "zh-Hans"

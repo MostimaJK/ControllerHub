@@ -7,9 +7,11 @@ public sealed class TrayHost : IDisposable
     readonly System.Windows.Forms.NotifyIcon icon;
     public TrayHost(Action show,Action exit)
     {
+        using var stream=System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/app.ico")).Stream;
+        using var sourceIcon=new System.Drawing.Icon(stream,16,16);
         icon=new System.Windows.Forms.NotifyIcon {
             Text="ControllerHub",
-            Icon=System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? System.Drawing.SystemIcons.Application,
+            Icon=(System.Drawing.Icon)sourceIcon.Clone(),
             Visible=true
         };
         var menu=new System.Windows.Forms.ContextMenuStrip();

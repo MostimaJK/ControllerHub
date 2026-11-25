@@ -1,0 +1,237 @@
+:root{--accent:#002FA7;--accent-surface:#edf1ff}
+*{box-sizing:border-box}body{margin:0;background:#f8f9fc;color:#22324d;font:14px "Segoe UI","Microsoft YaHei UI",sans-serif}aside{width:192px;height:100vh;padding:24px 12px 16px;background:white;border-right:1px solid #dee4ef;display:flex;flex-direction:column}header{display:flex;align-items:center;gap:9px;font-size:17px;font-weight:650}header b{border-radius:10px;background:var(--accent);color:white;font-size:14px;padding:10px 7px}nav{margin-top:38px;position:relative;display:grid;gap:4px;isolation:isolate}nav i{position:absolute;left:0;right:0;top:0;height:42px;background:var(--accent-surface);border-radius:8px;z-index:-1;transition:transform .29s cubic-bezier(.2,.9,.28,1.09)}button{height:42px;display:flex;align-items:center;gap:11px;padding:0 12px;border:0;border-radius:8px;background:transparent;text-align:left;font:inherit;color:#516079;cursor:pointer}button span{font-family:"Segoe MDL2 Assets";font-size:16px}button[aria-current=page]{color:var(--accent);font-weight:650}button:hover{background:#3358980c}button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}footer{margin-top:auto;color:#67758a;font-size:11px;padding-left:10px}@media(prefers-reduced-motion:reduce){nav i{transition:none}}
+body{display:flex;height:100vh}aside{flex:none}main{width:100%;overflow:auto;padding:26px 30px}main .stack,main .group,main .card{display:flex;flex-direction:column;gap:10px}main .columns{display:grid;gap:12px}main .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}main .card{background:white;padding:20px;border:1px solid #dfe5ef;border-radius:14px}main button,select,main input:not([type]),textarea{border:1px solid #c7d2e2;border-radius:8px;padding:8px 12px;background:white;color:#283951;font:inherit}main button{min-height:36px;height:auto;justify-content:center}main button:hover{background:#eef3fc}.primary{background:var(--accent);color:white}.selected{background:var(--accent-surface);border-color:#7094d2}main :disabled{opacity:.5}main label{display:flex;gap:10px;align-items:center}input{accent-color:var(--accent)}textarea{min-height:165px}main span{overflow-wrap:anywhere}main>.stack{gap:18px}
+/* Shared desktop surfaces and input states */
+body { background:#f4f6fa; color:#192b43 }
+main { padding:30px clamp(22px,3vw,48px); scrollbar-gutter:stable }
+main>.stack { max-width:1240px; margin:auto; gap:20px }
+main .card { padding:clamp(16px,2vw,26px); border-color:#dae2ed; box-shadow:0 3px 14px #263b5c08 }
+main .columns { align-items:start }
+main button { font-family:inherit; transition:background .14s,transform .12s }
+main button span { font-family:inherit }
+main button:active:not(:disabled) { transform:translateY(1px) }
+main button.primary { color:white; background:var(--accent); border-color:var(--accent) }
+main button.selected { background:var(--accent-surface); border-color:#7195d2 }
+main label { min-height:32px; cursor:pointer }
+main input[type=checkbox] { appearance:none; flex:none; width:34px;height:20px;border-radius:20px;background:#afbccb;position:relative;cursor:pointer }
+main input[type=checkbox]::after { content:"";position:absolute;inset:3px auto auto 3px;width:14px;height:14px;border-radius:50%;background:white;transition:transform .16s }
+main input[type=checkbox]:checked { background:var(--accent) }
+main input[type=checkbox]:checked::after { transform:translateX(14px) }
+main select { min-height:38px; max-width:100%;cursor:pointer }
+main select:focus-visible,main input:focus-visible { outline:2px solid var(--accent);outline-offset:2px }
+main[data-page="0"] .card:has(img) { background:linear-gradient(115deg,#f0f5fe,#fff 65%) }
+
+main[data-page="2"] .card:has(select) { border-top:3px solid var(--accent) }
+main[data-page="3"] .card { gap:14px }
+@media(prefers-reduced-motion:reduce){main *,main *::after{transition:none!important}}
+/* Compact workspace: device information and connection controls share one surface. */
+aside {width:156px;padding:20px 10px 14px}
+header {font-size:15px;gap:7px}
+nav {margin-top:27px;gap:3px}
+nav button {height:37px;padding-inline:10px;gap:9px}
+nav i {height:37px;transition-duration:.18s}
+main {padding:20px 22px}
+main>.stack {gap:13px}
+main .stack,main .group {gap:7px}
+main .columns {gap:10px}
+main .card {padding:15px;border-radius:12px}
+main button {min-height:32px;height:auto;padding:6px 12px;width:fit-content;max-width:100%}
+main button span {font-size:inherit}
+main select {min-height:32px;padding:4px 9px;width:fit-content;max-width:100%}
+main>.stack>.columns:first-child {grid-template-columns:minmax(0,1fr) auto!important;align-items:center}
+main>.stack>.columns:first-child>.card {padding:4px 9px;background:#edf2f6;box-shadow:none;border:0;border-radius:20px}
+main[data-page="0"] .card:has(img) {padding:17px 19px}
+main[data-page="0"] .card:has(img)>.columns {grid-template-columns:minmax(0,1fr) minmax(190px,.78fr)!important;gap:18px}
+main[data-page="0"] .card:has(img)>.columns>:last-child {border-left:1px solid #dbe3ed;padding-left:16px}
+
+main[data-page="0"] .columns[data-cols="4"] button {width:100%;padding:8px 7px;text-align:left;align-items:center}
+main[data-page="0"] .columns[data-cols="4"] button .stack {gap:3px}
+main[data-page="0"] .primary {width:100%}
+main[data-page="0"] .card:has(img) .card {box-shadow:none;background:transparent;border:0;padding:2px 0}
+@media(max-width:800px){aside{width:138px}main{padding:16px 14px}main[data-page="0"] .card:has(img){padding:12px}main .columns{gap:6px}}
+/* Keep the home task and output selector on the same vertical axis. */
+main[data-page="0"]>.stack {min-height:100%;gap:12px}
+main[data-page="0"]>.stack>.stack {flex:1;gap:9px}
+main[data-page="0"] .card:has(img) {flex:1;justify-content:center}
+main[data-page="0"] .card:has(img)>.columns {align-items:center;grid-template-columns:minmax(0,1.25fr) minmax(180px,.85fr)!important}
+main[data-page="0"] .card:has(img)>.columns>:last-child :is(select,button) {width:100%;height:35px;min-height:35px;justify-content:center}
+
+main[data-page="0"] .columns[data-cols="4"] {align-items:stretch;gap:8px}
+main[data-page="0"] .columns[data-cols="4"] button {height:42px;justify-content:center}
+main[data-page="0"] .columns[data-cols="4"] button .stack>span+span {display:none}
+
+/* Give the device artwork the flexible track and keep actions together. */
+main[data-page="0"] .card:has(img)>.columns {
+  grid-template-columns:minmax(0,1fr) clamp(168px,23%,210px)!important;
+}
+
+main select {
+  border:1px solid #bbc9dc;
+  border-radius:9px;
+  color:#203655;
+  background:#fff;
+  padding-inline:11px;
+}
+main select:hover {border-color:#849bbb;background:#f9fbff}
+@supports (appearance:base-select) {
+  main select,main select::picker(select) {appearance:base-select}
+  main select {align-items:center;gap:14px}
+  main select::picker-icon {color:#57708d;transition:rotate .15s ease}
+  main select:open {border-color:var(--accent)}
+  main select:open::picker-icon {rotate:180deg}
+  main select::picker(select) {
+    margin-top:4px;padding:4px;border:1px solid #cbd6e4;border-radius:10px;
+    background:#fff;box-shadow:0 6px 18px #263c5c22;max-height:15rem;overflow-y:auto;
+  }
+  main option {min-height:30px;padding:5px 10px;gap:7px;border-radius:6px}
+  main option:checked {background:var(--accent-surface);color:var(--accent);font-weight:600}
+  main option:hover,main option:focus-visible {background:#dfeafa}
+  @media(prefers-reduced-motion:reduce){main select::picker-icon{transition:none}}
+}
+main .columns > * {min-width:0}
+main button,main select {min-height:34px}
+main .row {flex-wrap:wrap;row-gap:7px}
+
+main[data-page="2"] .columns[data-cols="3"] button {width:100%;justify-content:center}
+main[data-page="4"] .card>.columns,
+main[data-page="5"] .card>.columns:has(select) {grid-template-columns:minmax(0,1fr) auto!important;align-items:center}
+main[data-page="4"] input:not([type]) {width:min(100%,32em)}
+main[data-page="5"] textarea {min-height:clamp(170px,34vh,320px);width:100%;resize:vertical}
+@media(min-width:940px){
+  main[data-page="2"]>.stack>.columns:nth-child(2),
+  main[data-page="2"]>.stack>.card>.columns {grid-template-columns:minmax(0,1.35fr) minmax(230px,1fr)!important}
+
+  main[data-page="3"]>.stack>.stack {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:12px}
+  main[data-page="5"]>.stack>.stack>.columns {grid-template-columns:minmax(0,1.4fr) minmax(230px,1fr)!important}
+}
+
+
+main img {
+  display:block;
+  width:min(100%, clamp(230px, 46vh, 370px), 32vw);
+  aspect-ratio:1000/850;
+  height:auto;
+  object-fit:contain;
+  align-self:center;
+  flex:none;
+  margin:4px auto 8px;
+}
+.connection-status {display:inline-flex;align-items:center;gap:7px;justify-self:start;width:fit-content;max-width:100%;color:#495c70;background:#edf2f6;border-radius:12px;padding:5px 8px;font-size:12px;font-weight:600}
+.connection-status b {display:grid;place-items:center;background:#657789;color:white;width:19px;height:19px;border-radius:50%;flex:none;font:700 14px/1 "Segoe UI",sans-serif}
+.connection-status[data-state=ready] {color:#065f46;background:#def6eb}
+.connection-status[data-state=ready] b {background:#08774f}
+.connection-status[data-state=warning] {color:#873800;background:#fff0d9}
+.connection-status[data-state=warning] b {background:#a34a06}
+.connection-status[data-state=input] {color:#214e88;background:#e5effc}
+.connection-status[data-state=input] b {background:#35669b}
+.connection-steps {list-style:none;margin:4px 0;padding:0}
+.connection-steps li {position:relative;display:flex;align-items:center;gap:9px;min-height:30px;color:#536277;font-size:13px}
+.connection-steps b {box-sizing:border-box;display:grid;place-items:center;width:20px;height:20px;flex:none;border:1px solid #abb8c9;border-radius:50%;background:white;font:600 12px/1 "Segoe UI",sans-serif}
+.connection-steps li:not(:last-child)::after {content:"";position:absolute;left:9.5px;top:calc(50% + 10px);height:10px;border-left:1px solid #c8d1dd}
+.connection-steps [data-state=done] b {background:#08774f;border-color:#08774f;color:white}
+.connection-steps [data-state=active] {color:var(--accent);font-weight:650}
+.connection-steps [data-state=active] b {color:inherit;border:2px solid var(--accent);box-shadow:0 0 0 2px #e3ecfc}
+.connection-steps [data-state=error] b {color:white;background:#a34a06;border-color:#a34a06}
+.connection-steps [data-state=skipped] b {border-style:dashed}
+main .connection-hint {display:block;line-height:1.45;height:2.9em;overflow:auto;overflow-wrap:anywhere}
+/* Secondary pages share a stable heading and reading rhythm. */
+main:not([data-page="0"])>.stack {gap:14px}
+main:not([data-page="0"])>.stack>.columns:first-child {align-items:start}
+main:not([data-page="0"]) .connection-hint {height:1.6em;line-height:1.6;overflow:auto}
+main:not([data-page="0"]) .card {padding:18px 20px}
+main:not([data-page="0"]) .card>.stack {gap:10px}
+main[data-page="2"]>.stack>.columns:nth-child(2)>.card:last-child :is(button,select) {width:min(100%,23rem);min-height:36px}
+main[data-page="1"] input[type="range"],main[data-page="3"] input[type="range"] {width:100%;margin:5px 0 9px}
+main[data-page="3"] label {align-items:center;min-height:34px;border-bottom:1px solid #edf0f5;padding:3px 0}
+main[data-page="3"] input[type="checkbox"] {margin-inline:0 4px}
+main[data-page="4"] .card:has(input:not([type])) .row {gap:8px}
+main[data-page="4"] .card:has(input:not([type])) input {width:100%;box-sizing:border-box}
+main[data-page="4"] .card:has(input:not([type])) .primary {min-width:12rem}
+main[data-page="5"] .card>.stack>button {width:min(100%,22rem)}
+main[data-page="5"] textarea {box-sizing:border-box;line-height:1.55;padding:10px;white-space:pre-wrap}
+main:not([data-page="0"]) :is(button,select,input,textarea) {max-width:100%}
+@media(max-width:900px){
+  main[data-page="5"]>.stack>.stack>.columns:has(textarea) {grid-template-columns:minmax(0,1fr)!important}
+  main[data-page="5"]>.stack>.stack>.columns:has(textarea)>.card {grid-column:1!important;grid-row:auto!important}
+}
+
+/* The feedback column is sized by its controls; explanatory copy wraps inside it. */
+main[data-page="1"]>.stack {min-height:100%}
+main[data-page="1"]>.stack>.columns:nth-child(2) {
+  flex:1;
+  grid-template-columns:minmax(0,1fr) fit-content(40%)!important;
+  gap:clamp(18px,2vw,30px);
+  align-items:stretch;
+}
+main[data-page="1"] .card>.stack {flex:1;min-width:0}
+main[data-page="1"] .card:has(input[type="range"]) img {margin-block:auto}
+main[data-page="1"] .card:has(input[type="range"]) .primary {align-self:center;min-width:10em;margin-top:4px}
+main[data-page="1"]>.stack>.columns:nth-child(2)>.card:last-child button {
+  width:auto;align-self:stretch;padding-inline:16px;line-height:1.4;
+  height:auto;min-height:36px;text-align:center;text-wrap:balance;
+}
+main[data-page="1"] .card:last-child>.stack>span {
+  width:0;min-width:100%;overflow-wrap:anywhere;
+}
+main[data-page="1"] .card:last-child button+span {
+  margin-top:auto;padding-top:16px;border-top:1px solid var(--line,#dee5ee)
+}
+@media(max-width:740px) {
+  main[data-page="1"]>.stack>.columns:nth-child(2) {grid-template-columns:minmax(0,1fr)!important}
+  main[data-page="1"]>.stack>.columns:nth-child(2)>.card {grid-column:1!important;grid-row:auto!important}
+}
+
+/* Keep the control group close to the illustration at every window height. */
+main[data-page="1"] .card:has(input[type="range"])>.stack>img+span,
+main[data-page="1"] .card input[type="range"] {width:min(66%,29rem);align-self:center}
+main[data-page="1"] .card input[type="range"] {margin:0 0 4px}
+main[data-page="1"] .card:has(input[type="range"]) .primary {margin:0 auto auto}
+main[data-page="2"]>.stack {min-height:100%}
+main[data-page="2"]>.stack>.columns:nth-child(2) {flex:1;align-items:stretch;gap:clamp(18px,2vw,30px);grid-template-columns:minmax(0,1fr) clamp(205px,27%,285px)!important}
+main[data-page="2"] .card>.stack {flex:1}
+main[data-page="2"] .card:has(img) img {margin:auto}
+main[data-page="2"] .columns[data-cols="3"] {width:min(100%,26rem);align-self:center}
+main[data-page="2"]>.stack>.columns:nth-child(2)>.card:last-child :is(select,button) {align-self:center;width:min(100%,16rem)}
+main[data-page="2"] .card:has(select) .primary {margin-top:auto}
+main[data-page="3"] .card input[type="range"] {width:min(78%,26rem);align-self:center}
+main[data-page="3"] .card input[type="range"]+button,
+main[data-page="4"] .card:has(input:not([type])) .primary {align-self:center}
+main[data-page="4"] .card:has(input:not([type])) input {width:min(100%,32rem);align-self:center}
+main[data-page="4"] .card:has(input:not([type])) .row {justify-content:center}
+main[data-page="5"] .card>.stack>button {width:min(100%,18rem);align-self:center}
+@media(max-width:740px){
+  main[data-page="2"]>.stack>.columns:nth-child(2) {grid-template-columns:minmax(0,1fr)!important}
+  main[data-page="2"]>.stack>.columns:nth-child(2)>.card {grid-column:1!important;grid-row:auto!important}
+  main[data-page="1"] .card input[type="range"],
+  main[data-page="1"] .card:has(input[type="range"])>.stack>img+span {width:85%}
+}
+/* Mapping and rumble share one stage, including the artwork's anchor. */
+main:is([data-page="1"],[data-page="2"])>.stack {
+  min-height:100%;
+}
+main:is([data-page="1"],[data-page="2"])>.stack>.columns:nth-child(2) {
+  flex:1;
+  grid-template-columns:minmax(0,1fr) clamp(218px,22vw,262px)!important;
+  align-items:stretch;
+  gap:clamp(18px,2vw,30px);
+}
+main:is([data-page="1"],[data-page="2"]) .card:has(img)>.stack {
+  flex:1;
+  justify-content:flex-start;
+}
+main:is([data-page="1"],[data-page="2"]) .card:has(img)>.stack>img {
+  margin:clamp(16px,3vh,30px) auto clamp(12px,2.5vh,24px);
+}
+@media(max-width:740px){
+  main:is([data-page="1"],[data-page="2"])>.stack>.columns:nth-child(2) {
+    grid-template-columns:minmax(0,1fr)!important
+  }
+}
+main:is([data-page="1"],[data-page="2"]) .card:has(img)>.stack>span:first-child {line-height:28px}
+main:is([data-page="1"],[data-page="2"]) .card:has(img)>.stack>span:nth-child(2) {line-height:20px}
+
+nav .nav-icon {flex:none;width:18px;height:18px;background:currentColor;mask:no-repeat center / contain}
+header .app-mark {width:31px;height:31px;padding:0;flex:none;display:grid;place-items:center;background:var(--accent)}
+.app-mark::before {content:"";width:24px;height:24px;background:white;mask:url(icons/gamepad-2.svg) center / contain no-repeat}
+
+main button.primary:hover:not(:disabled){background:#00268a}

@@ -1,4 +1,17 @@
-﻿{
+{
+  "搜尋手柄": "Find controller",
+  "接收實體輸入": "Receive input",
+  "建立遊戲輸出": "Create game output",
+  "已找到手柄": "Controller found",
+  "實體輸入就緒": "Input ready",
+  "遊戲輸出就緒": "Game output ready",
+  "本次略過遊戲輸出": "Game output skipped",
+  "搜尋手柄未完成": "Controller search failed",
+  "實體輸入未就緒": "Input not ready",
+  "遊戲輸出未就緒": "Game output not ready",
+  "正在等待有效輸入。": "Waiting for valid input.",
+
+  "實體輸入就緒 · 遊戲輸出未就緒": "Physical input ready · Game output not ready",
   "藍牙": "Bluetooth",
   "不映射": "Unmapped",
   "USB 有線": "USB wired",

@@ -28,9 +28,9 @@ try {
         if (-not $taskGenerated.StartsWith($taskPayload + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Payload cleanup outside publish directory.' }
         if (Test-Path -LiteralPath $taskGenerated) { Remove-Item -LiteralPath $taskGenerated -Recurse -Force }
     }
-    Copy-Item -LiteralPath README.md,COPYING,THIRD_PARTY_NOTICES.md,DEPENDENCIES.lock.json -Destination $taskPayload -Force
+    Copy-Item -LiteralPath README.md,README.zh-Hans.md,README.zh-Hant.md,RELEASE_NOTES.md,COPYING,THIRD_PARTY_NOTICES.md,DEPENDENCIES.lock.json -Destination $taskPayload -Force
     foreach ($taskDirectory in @('docs','licenses')) { Copy-Item -LiteralPath $taskDirectory -Destination $taskPayload -Recurse -Force }
-    $taskNuget = (& $taskDotnet nuget locals global-packages --list) -replace '^global-packages:\s*',''
+    $taskNuget = (& $taskDotnet nuget locals global-packages --list) -replace '^.*?:\s+',''
     foreach ($taskPack in @('microsoft.netcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64')) {
         $taskPackRoot = Join-Path $taskNuget ($taskPack + '/' + $taskVersion)
         $taskNotices = @(Get-ChildItem -LiteralPath $taskPackRoot -File | Where-Object { $_.Name -match '^(LICENSE(\.TXT)?|THIRD-PARTY-NOTICES\.TXT)$' })
@@ -58,7 +58,7 @@ try {
     $taskFrameworkRoot = Split-Path -Parent $taskCompiler
     $taskRelease = Join-Path $taskRoot 'releases/latest'
     New-Item -ItemType Directory -Path $taskRelease -Force | Out-Null
-    $taskExe = Join-Path $taskRelease "ControllerHub-v$taskProductVersion-preview-portable-win-x64.exe"
+    $taskExe = Join-Path $taskRelease "ControllerHub-v$taskProductVersion-portable-win-x64.exe"
     $taskSources = @('src/ControllerHub.Portable/Launcher.cs','src/ControllerHub.Portable/PortableFiles.cs') | ForEach-Object { (Resolve-Path -LiteralPath $_).Path }
     $taskArguments = @('/nologo','/target:winexe','/platform:x64','/optimize+','/debug-','/langversion:5','/codepage:65001',"/out:$taskExe",'/win32icon:src/ControllerFusion.App/app.ico',"/resource:$taskZip,ControllerHub.Payload.zip","/resource:$taskManifest,ControllerHub.Payload.manifest",'/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll',('/reference:' + (Join-Path $taskFrameworkRoot 'System.IO.Compression.dll')))
     & $taskCompiler @taskArguments @taskSources

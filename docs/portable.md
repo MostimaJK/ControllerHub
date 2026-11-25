@@ -1,6 +1,6 @@
 ﻿# 單 EXE 便攜版
 
-從 Release 下載對應版本的 **ControllerHub-v<版本>-preview-portable-win-x64.exe** 後即可執行，不需要手動解壓，也不需要另外安裝 .NET 10 Desktop Runtime。目標系統仍為 Windows 11 x64；小型解壓啟動器使用 Windows 內建的 .NET Framework 4.x。
+從 Release 下載對應版本的 **ControllerHub-v<版本>-portable-win-x64.exe** 後即可執行，不需要手動解壓，也不需要另外安裝 .NET 10 Desktop Runtime。目標系統仍為 Windows 11 x64；小型解壓啟動器使用 Windows 內建的 .NET Framework 4.x。
 
 ## 啟動與設定
 
@@ -24,7 +24,7 @@ USB/IP Client 系統驅動仍需首次安裝；有線與藍牙來源都可能使
 
 ## 原始碼與重建
 
-請取得與 EXE 相同版本的原始碼。既有 v0.3.0 portable-source 附件對應舊 .NET 8 版；v0.3.4 使用同一 Release 的對應原始碼與 .NET 10.0.14。
+請取得與 EXE 相同版本的原始碼。既有 v0.3.0 portable-source 附件對應舊 .NET 8 版；v1.0.0 使用同一 Release 的對應原始碼與 .NET 10.0.14。
 
 在 Windows、PowerShell 7、Git、.NET 10 SDK 環境執行：
 
